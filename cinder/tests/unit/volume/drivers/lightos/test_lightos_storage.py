@@ -331,8 +331,8 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         self.driver.delete_volume(volume)
         db.volume_destroy(self.ctxt, volume.id)
 
-    def test_create_volume_fail_to_create_same_volume_twice(self):
-        """Test that lightos_client fail creating an already exists volume."""
+    def test_create_volume_same_volume_twice_succeed(self):
+        """Test succeed to create an exiting volume."""
         self.driver.do_setup(None)
 
         vol_type = test_utils.create_volume_type(self.ctxt, self,
@@ -340,6 +340,7 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         volume = test_utils.create_volume(self.ctxt, size=4,
                                           volume_type_id=vol_type.id)
 
+        self.driver.create_volume(volume)
         self.driver.create_volume(volume)
         self.driver.delete_volume(volume)
         db.volume_destroy(self.ctxt, volume.id)
