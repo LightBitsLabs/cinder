@@ -468,3 +468,21 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         assert volumes_data['free_capacity_gb'] == 'infinite', \
             "Expected 'infinite', received %s" % \
             volumes_data['free_capacity_gb']
+
+    def test_create_clone(self):
+        self.driver.do_setup(None)
+
+        vol_type = test_utils.create_volume_type(self.ctxt, self,
+                                                 name='my_vol_type')
+        volume = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=vol_type.id)
+        clone = test_utils.create_volume(self.ctxt, size=4,
+                                         volume_type_id=vol_type.id)
+
+        self.driver.create_volume(volume)
+        self.driver.create_cloned_volume(clone, volume)
+        self.driver.delete_volume(volume)
+        self.driver.delete_volume(clone)
+
+        db.volume_destroy(self.ctxt, volume.id)
+        db.volume_destroy(self.ctxt, clone.id)
