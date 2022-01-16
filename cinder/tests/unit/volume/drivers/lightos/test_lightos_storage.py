@@ -47,6 +47,9 @@ FAKE_LIGHTOS_CLUSTER_INFO: Dict[str, str] = {
     "f4a89ce0-9fc2-4900-bfa3-00ad27995e7b"
 }
 
+VOLUME_BACKEND_NAME = "lightos_backend"
+RESERVED_PERCENTAGE = 30
+
 
 class InitiatorConnectorMock(object):
 
@@ -225,6 +228,8 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         configuration.initiator_connector = \
             "cinder.tests.unit.volume.drivers.lightos." \
             "test_lightos_storage.InitiatorConnectorMock"
+        configuration.volume_backend_name = VOLUME_BACKEND_NAME
+        configuration.reserved_percentage = RESERVED_PERCENTAGE
 
         def mocked_safe_get(config, variable_name):
             if hasattr(config, variable_name):
@@ -236,7 +241,6 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
                                                    configuration)
         self.driver = lightos.LightOSVolumeDriver(configuration=configuration)
         self.ctxt = context.get_admin_context()
-
         self.db: DBMock = DBMock()
 
         # define a default send_cmd override to return default values.
@@ -428,4 +432,39 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         pass
 
     def test_get_volume_stats(self):
-        pass
+        """Test that lightos_client succeed."""
+        self.driver.do_setup(None)
+        volumes_data = self.driver.get_volume_stats(refresh=False)
+        assert len(volumes_data) == 0, "Expected empty config"
+
+        volumes_data = self.driver.get_volume_stats(refresh=True)
+        assert volumes_data['vendor_name'] == 'LightOS Storage', \
+            "Expected 'LightOS Storage', received %s" % \
+            volumes_data['vendor_name']
+        assert volumes_data['volume_backend_name'] == VOLUME_BACKEND_NAME, \
+            "Expected %s, received %s" % \
+            (VOLUME_BACKEND_NAME, volumes_data['volume_backend_name'])
+        assert volumes_data['driver_version'] == self.driver.VERSION, \
+            "Expected %s, received %s" % \
+            (self.driver.VERSION, volumes_data['driver_version'])
+        assert volumes_data['storage_protocol'] == "lightos", \
+            "Expected 'lightos', received %s" % \
+            volumes_data['storage_protocol']
+        assert volumes_data['reserved_percentage'] == RESERVED_PERCENTAGE, \
+            "Expected %d, received %s" % \
+            (RESERVED_PERCENTAGE, volumes_data['reserved_percentage'])
+        assert volumes_data['QoS_support'] is False, \
+            "Expected False, received %s" % volumes_data['QoS_support']
+        assert volumes_data['online_extend_support'] is True, \
+            "Expected True, received %s" % \
+            volumes_data['online_extend_support']
+        assert volumes_data['thin_provisioning_support'] is True, \
+            "Expected True, received %s" % \
+            volumes_data['thin_provisioning_support']
+        assert volumes_data['compression'] is False, \
+            "Expected False, received %s" % volumes_data['compression']
+        assert volumes_data['multiattach'] is True, \
+            "Expected True, received %s" % volumes_data['multiattach']
+        assert volumes_data['free_capacity_gb'] == 'infinite', \
+            "Expected 'infinite', received %s" % \
+            volumes_data['free_capacity_gb']
