@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import functools
 import http.client as httpstatus
 from typing import Dict
 from typing import List
@@ -225,8 +226,15 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
             "cinder.tests.unit.volume.drivers.lightos." \
             "test_lightos_storage.InitiatorConnectorMock"
 
-        self.driver = lightos.LightOSVolumeDriver(configuration=configuration)
+        def mocked_safe_get(config, variable_name):
+            if hasattr(config, variable_name):
+                return config.__getattribute__(variable_name)
+            else:
+                return None
 
+        configuration.safe_get = functools.partial(mocked_safe_get,
+                                                   configuration)
+        self.driver = lightos.LightOSVolumeDriver(configuration=configuration)
         self.ctxt = context.get_admin_context()
 
         self.db: DBMock = DBMock()
