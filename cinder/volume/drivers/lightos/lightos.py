@@ -948,13 +948,13 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         not a specific volume.
         """
-
         LOG.debug("getting volume stats (refresh=%s)", refresh)
 
         if not refresh:
             return self._stats
 
         backend_name = self.configuration.safe_get('volume_backend_name')
+        res_percentage = self.configuration.safe_get('reserved_percentage')
         storage_protocol = 'lightos'
         # as a tenant we dont have access to cluster stats
         # in the future we might expose this per project via get_project API
@@ -965,7 +965,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 'volume_backend_name': backend_name or self.__class__.__name__,
                 'driver_version': self.VERSION,
                 'storage_protocol': storage_protocol,
-                'reserved_percentage': self.configuration.reserved_percentage,
+                'reserved_percentage': res_percentage,
                 'QoS_support': False,
                 'online_extend_support': True,
                 'thin_provisioning_support': True,
