@@ -104,7 +104,7 @@ class LightOSConnection(object):
     def get_driver_options():
         return lightos_opts
 
-    def _init_api_servers(self) -> Dict[int, Dict]:
+    def _init_api_servers(self):
         if not self.conf.lightos_api_address or \
                 len(self.conf.lightos_api_address) == 0:
             raise exception.InvalidParameterValue(
@@ -114,7 +114,9 @@ class LightOSConnection(object):
                  for host in self.conf.lightos_api_address.split(',')]
         # Need to verify if hosts is real IP lists or not
         # And verify that port is in range
-        apiservers: Dict[int, Dict] = {}
+
+        # apiservers is Dict[int, Dict]
+        apiservers = {}
         for server_idx, api_address in enumerate(hosts):
             apiservers[server_idx] = dict(
                 api_address=api_address,
