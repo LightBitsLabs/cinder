@@ -580,7 +580,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             acl=['ALLOW_NONE']
         )
 
-    def _get_lightos_uuid(self, project_name, volume):
+    def _get_lightos_volume_uuid(self, project_name, volume):
         lightos_name = self._lightos_volname(volume)
         timeout = self.logical_op_timeout
 
@@ -779,7 +779,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
     def delete_volume(self, volume):
         """Delete volume."""
         project_name = self._get_lightos_project_name(volume)
-        lightos_uuid = self._get_lightos_uuid(project_name, volume)
+        lightos_uuid = self._get_lightos_volume_uuid(project_name, volume)
 
         if not self._delete_lightos_volume(project_name, lightos_uuid):
             msg = 'Failed to delete LightOS volume with UUID \
