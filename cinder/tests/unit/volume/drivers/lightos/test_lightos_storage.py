@@ -19,6 +19,7 @@ import functools
 import hashlib
 import http.client as httpstatus
 import json
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Tuple
@@ -32,6 +33,7 @@ from cinder.tests.unit import test
 from cinder.tests.unit import utils as test_utils
 from cinder.volume import configuration as conf
 from cinder.volume.drivers import lightos
+from cinder.volume import volume_utils
 
 
 FAKE_LIGHTOS_CLUSTER_NODES: Dict[str, List] = {
@@ -45,10 +47,15 @@ FAKE_LIGHTOS_CLUSTER_NODES: Dict[str, List] = {
     ]
 }
 
-FAKE_LIGHTOS_CLUSTER_INFO: Dict[str, str] = {
+FAKE_LIGHTOS_CLUSTER_INFO: Dict[str, Any] = {
     'UUID': "926e6df8-73e1-11ec-a624-07ba3880f6cc",
     'subsystemNQN': "nqn.2014-08.org.nvmexpress:NVMf:uuid:"
-    "f4a89ce0-9fc2-4900-bfa3-00ad27995e7b"
+    "f4a89ce0-9fc2-4900-bfa3-00ad27995e7b",
+    'discoveryEndpoints': [
+        '192.168.75.10:8009',
+        '192.168.75.11:8009',
+        '192.168.75.12:8009'
+    ]
 }
 
 FAKE_CLIENT_HOSTNQN = "hostnqn1"
@@ -252,6 +259,7 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
 
         configuration.lightos_api_address = \
             "10.10.10.71,10.10.10.72,10.10.10.73"
+        configuration.storage_protocol = lightos.NVMEOF_STORAGE_PROTOCOL
         configuration.lightos_api_port = 443
         configuration.lightos_jwt = None
         configuration.lightos_snapshotname_prefix = 'openstack_'
@@ -531,100 +539,41 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         db.volume_destroy(self.ctxt, volume.id)
         db.snapshot_destroy(self.ctxt, snapshot.id)
 
-    def test_initialize_connection(self):
-        InitialConnectorMock.hostnqn = "hostnqn1"
-        InitialConnectorMock.found_discovery_client = True
+    @mock.patch.object(volume_utils, 'brick_get_connector_properties')
+    def test_initialize_connection_nvmeof_storage_protocol(self,
+                                                           conn_props_mock):
+
+        conn_props_mock.return_value = \
+            {"nqn": "nqn.2014-08.org.nvmexpress:NVMf:uuid:"
+                    "f4a89ce0-9fc2-4900-bfa3-00ad27995e7b"}
         self.driver.do_setup(None)
         vol_type = test_utils.create_volume_type(self.ctxt, self,
                                                  name='my_vol_type')
         volume = test_utils.create_volume(self.ctxt, size=4,
                                           volume_type_id=vol_type.id)
         self.driver.create_volume(volume)
+        properties = volume_utils.brick_get_connector_properties()
         connection_props = \
-            self.driver.initialize_connection(volume,
-                                              get_connector_properties())
+            self.driver.initialize_connection(volume, properties)
         self.assertIn('driver_volume_type', connection_props)
-        self.assertEqual('lightos', connection_props['driver_volume_type'])
-        self.assertEqual(FAKE_CLIENT_HOSTNQN,
-                         connection_props['data']['hostnqn'])
-        self.assertEqual(FAKE_LIGHTOS_CLUSTER_INFO['subsystemNQN'],
-                         connection_props['data']['nqn'])
-        self.assertEqual(
-            self.db.data['projects']['default']['volumes'][0]['UUID'],
-            connection_props['data']['uuid'])
+        self.assertEqual(self.driver.configuration.storage_protocol,
+                         connection_props['driver_volume_type'])
 
-        self.driver.delete_volume(volume)
-        db.volume_destroy(self.ctxt, volume.id)
+        project_name = self.driver._get_lightos_project_name(volume)
+        nguid = self.driver._get_lightos_volume_uuid(project_name, volume)
+        self.assertEqual(nguid,
+                         connection_props["data"]["volume_nguid"])
 
-    def test_initialize_connection_no_hostnqn_should_fail(self):
-        InitialConnectorMock.hostnqn = ""
-        InitialConnectorMock.found_discovery_client = True
-        self.driver.do_setup(None)
-        vol_type = test_utils.create_volume_type(self.ctxt, self,
-                                                 name='my_vol_type')
-        volume = test_utils.create_volume(self.ctxt, size=4,
-                                          volume_type_id=vol_type.id)
-        self.driver.create_volume(volume)
-        self.assertRaises(exception.VolumeBackendAPIException,
-                          self.driver.initialize_connection, volume,
-                          get_connector_properties())
-        self.driver.delete_volume(volume)
-        db.volume_destroy(self.ctxt, volume.id)
+        self.assertEqual(len(FAKE_LIGHTOS_CLUSTER_NODES["nodes"]),
+                         len(connection_props['data']['targets']))
+        addresses = [addr["nvmeEndpoint"] for addr in
+                     FAKE_LIGHTOS_CLUSTER_NODES["nodes"]]
+        for target in connection_props['data']['targets']:
+            self.assertEqual(FAKE_LIGHTOS_CLUSTER_INFO['subsystemNQN'],
+                             target["nqn"])
+            data_addr = f'{target["target_portal"]}:{target["target_port"]}'
+            self.assertIn(data_addr, addresses)
 
-    def test_initialize_connection_no_dsc_should_fail(self):
-        InitialConnectorMock.hostnqn = "hostnqn1"
-        InitialConnectorMock.found_discovery_client = False
-        self.driver.do_setup(None)
-        vol_type = test_utils.create_volume_type(self.ctxt, self,
-                                                 name='my_vol_type')
-        volume = test_utils.create_volume(self.ctxt, size=4,
-                                          volume_type_id=vol_type.id)
-        self.driver.create_volume(volume)
-        self.assertRaises(exception.VolumeBackendAPIException,
-                          self.driver.initialize_connection, volume,
-                          get_connector_properties())
-        self.driver.delete_volume(volume)
-        db.volume_destroy(self.ctxt, volume.id)
-
-    def test_terminate_connection_with_hostnqn(self):
-        InitialConnectorMock.hostnqn = "hostnqn1"
-        InitialConnectorMock.found_discovery_client = True
-        self.driver.do_setup(None)
-        vol_type = test_utils.create_volume_type(self.ctxt, self,
-                                                 name='my_vol_type')
-        volume = test_utils.create_volume(self.ctxt, size=4,
-                                          volume_type_id=vol_type.id)
-        self.driver.create_volume(volume)
-        self.driver.terminate_connection(volume, get_connector_properties())
-        self.driver.delete_volume(volume)
-        db.volume_destroy(self.ctxt, volume.id)
-
-    def test_terminate_connection_with_empty_hostnqn_should_fail(self):
-        InitialConnectorMock.hostnqn = ""
-        InitialConnectorMock.found_discovery_client = True
-        self.driver.do_setup(None)
-        vol_type = test_utils.create_volume_type(self.ctxt, self,
-                                                 name='my_vol_type')
-        volume = test_utils.create_volume(self.ctxt, size=4,
-                                          volume_type_id=vol_type.id)
-        self.driver.create_volume(volume)
-        self.assertRaises(exception.VolumeBackendAPIException,
-                          self.driver.terminate_connection, volume,
-                          get_connector_properties())
-        self.driver.delete_volume(volume)
-        db.volume_destroy(self.ctxt, volume.id)
-
-    def test_force_terminate_connection_with_empty_hostnqn(self):
-        InitialConnectorMock.hostnqn = ""
-        InitialConnectorMock.found_discovery_client = True
-        self.driver.do_setup(None)
-        vol_type = test_utils.create_volume_type(self.ctxt, self,
-                                                 name='my_vol_type')
-        volume = test_utils.create_volume(self.ctxt, size=4,
-                                          volume_type_id=vol_type.id)
-        self.driver.create_volume(volume)
-        self.driver.terminate_connection(volume, get_connector_properties(),
-                                         force=True)
         self.driver.delete_volume(volume)
         db.volume_destroy(self.ctxt, volume.id)
 
@@ -638,22 +587,9 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         InitialConnectorMock.hostnqn = "hostnqn1"
         InitialConnectorMock.found_discovery_client = True
         self.driver.do_setup(None)
-        self.driver.cluster.subsystemNQN = ""
+        self.driver.lightos_cluster_info["subsystemNQN"] = ""
         self.assertRaises(exception.VolumeBackendAPIException,
                           self.driver.check_for_setup_error)
-
-    def test_check_for_setup_error_no_hostnqn_should_fail(self):
-        InitialConnectorMock.hostnqn = ""
-        InitialConnectorMock.found_discovery_client = True
-        self.driver.do_setup(None)
-        self.assertRaises(exception.VolumeBackendAPIException,
-                          self.driver.check_for_setup_error)
-
-    def test_check_for_setup_error_no_dsc_should_succeed(self):
-        InitialConnectorMock.hostnqn = "hostnqn1"
-        InitialConnectorMock.found_discovery_client = False
-        self.driver.do_setup(None)
-        self.driver.check_for_setup_error()
 
     def test_create_clone(self):
         self.driver.do_setup(None)
@@ -689,12 +625,10 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         assert volumes_data['driver_version'] == self.driver.VERSION, \
             "Expected %s, received %s" % \
             (self.driver.VERSION, volumes_data['driver_version'])
-        assert volumes_data['storage_protocol'] == "lightos", \
-            "Expected 'lightos', received %s" % \
-            volumes_data['storage_protocol']
-        assert volumes_data['reserved_percentage'] == RESERVED_PERCENTAGE, \
-            "Expected %d, received %s" % \
-            (RESERVED_PERCENTAGE, volumes_data['reserved_percentage'])
+        self.assertEqual(volumes_data['storage_protocol'],
+                         self.driver.configuration.storage_protocol)
+        self.assertEqual(volumes_data['reserved_percentage'],
+                         RESERVED_PERCENTAGE)
         assert volumes_data['QoS_support'] is False, \
             "Expected False, received %s" % volumes_data['QoS_support']
         assert volumes_data['online_extend_support'] is True, \
