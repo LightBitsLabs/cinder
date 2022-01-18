@@ -38,8 +38,8 @@ from cinder.volume import driver
 
 
 LOG = logging.getLogger(__name__)
-ENABLE_TRACE = True
 LIGHTOS_DEFAULT_PROJECT_NAME = "default"
+NVMEOF_STORAGE_PROTOCOL = 'nvmeof'
 
 urllib3.disable_warnings()
 
@@ -81,10 +81,9 @@ lightos_opts = [
                help='The default time to wait for an API service response')
 ]
 
+
 CONF = cfg.CONF
 CONF.register_opts(lightos_opts, group=config.SHARED_CONF_GROUP)
-BLOCK_SIZE = 8
-LIGHTOS = "LIGHTOS"
 
 
 class LightOSConnection(object):
@@ -93,9 +92,6 @@ class LightOSConnection(object):
         self.access_key = None
         self.apiservers = self._init_api_servers()
         self._cur_api_server_idx = random.randint(0, len(self.apiservers) - 1)
-        self.targets = dict()
-        self.lightos_cluster_uuid = None
-        self.subsystemNQN = None
         self._stats = {'total_capacity_gb': 0, 'free_capacity_gb': 0}
         # a single API call must have been answered in this time if the API
         # service/network were up
@@ -373,10 +369,15 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             self.configuration.lightos_client = \
                 "cinder.volume.drivers.lightos.LightOSConnection"
 
+        if self.configuration.storage_protocol != NVMEOF_STORAGE_PROTOCOL:
+            raise exception.InvalidParameterValue(
+                "storage_protocol must be: "
+                f"{NVMEOF_STORAGE_PROTOCOL}")
+
         initiator_connector = importutils.import_class(
             self.configuration.initiator_connector)
         self.connector = initiator_connector.factory(
-            LIGHTOS,
+            protocol=self.configuration.storage_protocol,
             root_helper=utils.get_root_helper(),
             message_queue=None,
             device_scan_attempts=
@@ -794,22 +795,15 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         LOG.warn('UNIMPLEMENTED: get vols')
 
     def check_for_setup_error(self):
-        subsysnqn = self.cluster.subsystemNQN
-        if not subsysnqn:
+        if not self.lightos_cluster_info.get("subsystemNQN"):
             msg = 'LIGHTOS: Cinder driver requires the \
             LightOS cluster subsysnqn'
             raise exception.VolumeBackendAPIException(message=msg)
 
-        hostnqn = self.connector.get_hostnqn()
-        if not hostnqn:
-            msg = 'LIGHTOS: Cinder driver requires a local hostnqn for \
-            image_to/from_volume operations'
+        if not self.lightos_nodes_info.get("nodes"):
+            msg = 'LIGHTOS: Cinder driver requires the \
+            LightOS cluster nodes information'
             raise exception.VolumeBackendAPIException(message=msg)
-
-        found_dsc = self.connector.find_dsc()
-        if not found_dsc:
-            LOG.warn(
-                'LIGHTOS: did not find a discovery client, continuing anyway')
 
     def get_cluster_info(self):
         status_code, cluster_info = self.cluster.send_cmd(
@@ -825,6 +819,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                  cluster_info['UUID'], cluster_info['subsystemNQN'])
         self.cluster.lightos_cluster_uuid = cluster_info['UUID']
         self.cluster.subsystemNQN = cluster_info['subsystemNQN']
+        return cluster_info
 
     def get_cluster_stats(self):
         status_code, cluster_info = self.cluster.send_cmd(
@@ -860,19 +855,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         raise exception.VolumeBackendAPIException(message=msg)
 
     def do_setup(self, context):
-
-        self.get_cluster_info()
-        nodes_info = self.wait_for_lightos_cluster()
-
-        self.cluster.targets = dict()
-        node_list = nodes_info['nodes']
-        for node in node_list:
-            self.cluster.targets[node['UUID']] = node
-
-        # reduce the logical op timeout if single server LightOS cluster
-        if len(node_list) == 1:
-            self.logical_op_timeout = self.configuration. \
-                lightos_api_service_timeout + 10
+        self.lightos_cluster_info = self.get_cluster_info()
+        self.lightos_nodes_info = self.wait_for_lightos_cluster()
 
     def extend_volume(self, volume, size):
         # loop because lightos api is async
@@ -959,7 +943,6 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         res_percentage = self.configuration.safe_get('reserved_percentage')
         compression = self.configuration.safe_get(
             'lightos_default_compression_enabled')
-        storage_protocol = 'lightos'
         # as a tenant we dont have access to cluster stats
         # in the future we might expose this per project via get_project API
         # currently we remove this stats call.
@@ -968,7 +951,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         data = {'vendor_name': 'LightOS Storage',
                 'volume_backend_name': backend_name or self.__class__.__name__,
                 'driver_version': self.VERSION,
-                'storage_protocol': storage_protocol,
+                'storage_protocol': self.configuration.storage_protocol,
                 'reserved_percentage': res_percentage,
                 'QoS_support': False,
                 'online_extend_support': True,
@@ -985,24 +968,6 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         self._stats = data
 
         return self._stats
-
-    def _get_connection_properties(self, project_name, volume):
-        lightos_targets = {}
-        for target in self.cluster.targets.values():
-            properties = dict()
-            data_address, _ = target['nvmeEndpoint'].split(':')
-            properties['target_portal'] = data_address
-            properties['target_port'] = 8009  # spec specified discovery port
-            properties['transport_type'] = 'tcp'
-            lightos_targets[data_address] = properties
-
-        server_properties = {}
-        server_properties['lightos_nodes'] = lightos_targets
-        server_properties['uuid'] = (
-            self._get_lightos_uuid(project_name, volume))
-        server_properties['nqn'] = self.cluster.subsystemNQN
-
-        return server_properties
 
     def set_volume_acl(self, project_name, lightos_uuid, acl, etag):
         return self.cluster.send_cmd(
@@ -1342,21 +1307,42 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         return False
 
     def initialize_connection(self, volume, connector):
-        hostnqn = connector.get('hostnqn')
-        found_dsc = connector.get('found_dsc')
-        LOG.debug(
-            'initialize_connection: connector hostnqn is %s found_dsc %s',
-            hostnqn,
-            found_dsc)
-        if not hostnqn:
-            msg = 'Connector (%s) did not contain a hostnqn, aborting' % (
-                connector,)
-            raise exception.VolumeBackendAPIException(message=msg)
+        return self._initialize_connector_nvmeof_protocol(
+            volume, connector)
 
-        if not found_dsc:
-            msg = 'Connector (%s) did not indicate a discovery \
-            client, aborting' % (
-                connector,)
+    def _initialize_connector_nvmeof_protocol(self, volume, connector):
+        """Returns connection information for volume
+
+        Example output value:
+
+        .. code-block:: json
+
+            {
+                "driver_volume_type": "nvmeof",
+                "data":
+                {
+                    "volume_nguid": "54613aa8-784c-11ec-b15e-83cb57984331",
+                    "host_nqn": "nqn.2014-08.org.nvmexpress:NVMf:uuid:2",
+                    "targets": [
+                        {
+                            "target_portal": "1.1.1.1",
+                            "target_port": 4420,
+                            "nqn": "nqn.2014-08.org.nvmexpress:NVMf:uuid:1",
+                            "transport_type": "tcp"
+                        },
+                        {
+                            "target_portal": "1.1.1.2",
+                            "target_port": 4420,
+                            "nqn": "nqn.2014-08.org.nvmexpress:NVMf:uuid:1",
+                            "transport_type": "tcp"
+                        }
+                    ]
+                }
+            }
+        """
+        hostnqn = connector.get('nqn')
+        if not hostnqn:
+            msg = f'Connector ({connector}) did not contain a nqn, aborting'
             raise exception.VolumeBackendAPIException(message=msg)
 
         lightos_volname = self._lightos_volname(volume)
@@ -1368,13 +1354,31 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             %s, aborting' % (hostnqn, lightos_volname)
             raise exception.VolumeBackendAPIException(message=msg)
 
-        props = self._get_connection_properties(project_name, volume)
-        props['hostnqn'] = hostnqn
-        return {'driver_volume_type': ('lightos'), 'data': props}
+        lightos_targets_info = []
+        for node in self.lightos_nodes_info["nodes"]:
+            address, port = node["nvmeEndpoint"].split(':')
+            lightos_targets_info.append({
+                'transport_type': 'tcp',
+                'target_portal': address,
+                'target_port': int(port),
+                'nqn': self.lightos_cluster_info["subsystemNQN"]
+            })
+
+        properties = {
+            "driver_volume_type": self.configuration.storage_protocol,
+            "data": {
+                "host_nqn": "TODO",
+                "volume_nguid":
+                    self._get_lightos_volume_uuid(project_name, volume),
+                "targets": lightos_targets_info
+            }
+        }
+
+        return properties
 
     def terminate_connection(self, volume, connector, **kwargs):
         force = 'force' in kwargs
-        hostnqn = connector.get('hostnqn') if connector else None
+        hostnqn = connector.get('nqn') if connector else None
         LOG.debug(
             'terminate_connection: force %s kwargs %s hostnqn %s',
             force,
