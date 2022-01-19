@@ -48,32 +48,33 @@ lightos_opts = [
                default=None,
                item_type=cfg.types.IPAddress(),
                help='The IP addresses of the LightOS API servers separated'
-               ' by commas without spaces'),
+               ' by commas.'),
     cfg.PortOpt('lightos_api_port',
                 default='443',
                 help='The TCP/IP port at which the LightOS API'
-                     ' servers listen.'
+                     ' endpoints listen.'
                      ' Port 443 is used for HTTPS other values'
-                     'are used for HTTP.'),
+                     ' are used for HTTP.'),
     cfg.StrOpt('lightos_jwt',
                default=None,
                help='JWT to be used for volume and snapshot operations with'
                     ' the LightOS cluster.'
-                    ' Keep this parameter clear if the cluster is installed'
+                    ' Do not set this parameter if the cluster is installed'
                     ' with multi-tenancy disabled.'),
     cfg.IntOpt('lightos_default_num_replicas',
                min=1,
                max=3,
                default=3,
                help='The default number of replicas to create for each'
-                    'volume. Valid values are 1, 2 and 3.'),
+                    ' volume.'),
     cfg.BoolOpt('lightos_default_compression_enabled',
                 default=False,
-                help='The default compression enabled setting \
-                for new volumes'),
+                help='The default compression enabled setting '
+                     ' for new volumes.'),
     cfg.IntOpt('lightos_api_service_timeout',
                default=30,
-               help='The default time to wait for an API service response')
+               help='The default amount of time (in seconds) to wait for'
+                     ' an API endpoint response.')
 ]
 
 CONF = cfg.CONF
@@ -96,9 +97,6 @@ class LightOSConnection(object):
         # a single API call must have been answered in this time if the API
         # service/network were up
         self.api_timeout = self.conf.lightos_api_service_timeout
-
-    def get_driver_options():
-        return lightos_opts
 
     def _init_api_servers(self) -> Dict[int, Dict]:
         # And verify that port is in range
@@ -347,6 +345,14 @@ class LightOSConnection(object):
 
 @interface.volumedriver
 class LightOSVolumeDriver(driver.VolumeDriver):
+    """OpenStack NVMe/TCP cinder drivers for Lightbits LightOS.
+
+    .. code-block:: default
+
+      Version history:
+          2.3.12 - Initial upstream driver version.
+    """
+
     VERSION = '2.3.12'
     # ThirdPartySystems wiki page
     CI_WIKI_NAME = "LightbitsLabs_CI"
@@ -377,6 +383,10 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         self.logical_op_timeout = \
             self.configuration.lightos_api_service_timeout * 3 + 10
+
+    @classmethod
+    def get_driver_options(cls):
+        return lightos_opts
 
     def create_cloned_volume(self, volume, src_vref):
         """Creates a clone of the specified volume.
