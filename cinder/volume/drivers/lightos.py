@@ -45,10 +45,10 @@ urllib3.disable_warnings()
 
 lightos_opts = [
     cfg.ListOpt('lightos_api_address',
-               default=None,
-               item_type=cfg.types.IPAddress(),
-               help='The IP addresses of the LightOS API servers separated'
-               ' by commas.'),
+                default=None,
+                item_type=cfg.types.IPAddress(),
+                help='The IP addresses of the LightOS API servers separated'
+                ' by commas.'),
     cfg.PortOpt('lightos_api_port',
                 default='443',
                 help='The TCP/IP port at which the LightOS API'
@@ -74,7 +74,7 @@ lightos_opts = [
     cfg.IntOpt('lightos_api_service_timeout',
                default=30,
                help='The default amount of time (in seconds) to wait for'
-                     ' an API endpoint response.')
+               ' an API endpoint response.')
 ]
 
 CONF = cfg.CONF
@@ -485,7 +485,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             project_name = extra_specs.get(
                 'lightos:project_name',
                 LIGHTOS_DEFAULT_PROJECT_NAME)
-        except Exception as e:
+        except Exception:
             LOG.debug(
                 "LIGHTOS volume %s has no lightos:project_name",
                 volume)
