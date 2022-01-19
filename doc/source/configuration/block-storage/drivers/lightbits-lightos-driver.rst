@@ -7,17 +7,6 @@ clusters to use LightOS clustered storage servers. This documentation
 explains how to configure Cinder for use with the Lightbits LightOS
 storage backend system.
 
-Driver options
-~~~~~~~~~~~~~~
-
-The following table contains the configuration options supported by the
-Lightbits LightOS Cinder driver.
-
-.. config-table::
-   :config-target: Lightbits LightOS
-
-   cinder.volume.drivers.lightos
-
 Supported operations
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -139,3 +128,14 @@ IPs, the Cinder driver's configuration file should be updated with the
 cluster nodes access IPs and restarted. As long as the Cinder driver
 can access at least one cluster access IP it will work, but will be
 susceptible to cluster node failures.
+
+Driver options
+~~~~~~~~~~~~~~
+
+The following table contains the configuration options supported by the
+Lightbits LightOS Cinder driver.
+
+.. config-table::
+   :config-target: Lightbits LightOS
+
+   cinder.volume.drivers.kioxia.kumoscale
