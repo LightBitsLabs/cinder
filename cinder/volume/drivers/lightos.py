@@ -470,10 +470,17 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         return lightos_volname
 
     def _get_lightos_project_name(self, volume):
-        extra_specs = volume.volume_type.extra_specs
-        project_name = extra_specs.get(
-            'lightos:project_name',
-            LIGHTOS_DEFAULT_PROJECT_NAME)
+        try:
+            extra_specs = volume.volume_type.extra_specs
+            project_name = extra_specs.get(
+                'lightos:project_name',
+                LIGHTOS_DEFAULT_PROJECT_NAME)
+        except Exception as e:
+            LOG.debug(
+                "LIGHTOS volume %s has no lightos:project_name",
+                volume)
+            project_name = LIGHTOS_DEFAULT_PROJECT_NAME
+
         return project_name
 
     def _lightos_snapshotname(self, snapshot_id):
@@ -1417,6 +1424,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                     'Terminating connection with extreme prejudice for \
                     volume %s',
                     volume)
+                project_name = self._get_lightos_project_name(volume)
                 self.remove_all_volume_acls(project_name, volume)
                 return
             else:
