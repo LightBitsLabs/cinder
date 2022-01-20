@@ -1433,7 +1433,6 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                     'Terminating connection with extreme prejudice for \
                     volume %s',
                     volume)
-                project_name = self._get_lightos_project_name(volume)
                 self.remove_all_volume_acls(project_name, volume)
                 return
             else:
