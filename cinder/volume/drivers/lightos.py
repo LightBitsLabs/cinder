@@ -387,7 +387,11 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
     @classmethod
     def get_driver_options(cls):
-        return lightos_opts
+        additional_opts = cls._get_oslo_driver_opts(
+            'driver_ssl_cert_verify', 'volume_name_template',
+            'snapshot_name_template', 'reserved_percentage',
+            'volume_backend_name')
+        return lightos_opts + additional_opts
 
     def create_cloned_volume(self, volume, src_vref):
         """Creates a clone of the specified volume.
