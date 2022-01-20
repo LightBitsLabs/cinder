@@ -138,4 +138,4 @@ Lightbits LightOS Cinder driver.
 .. config-table::
    :config-target: Lightbits LightOS
 
-   cinder.volume.drivers.kioxia.kumoscale
+   cinder.volume.drivers.lightos
