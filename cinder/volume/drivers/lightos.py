@@ -1435,10 +1435,10 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                     volume)
                 self.remove_all_volume_acls(project_name, volume)
                 return
-            else:
-                msg = 'Connector (%s) did not return a hostnqn, aborting' % (
-                    connector,)
-                raise exception.VolumeBackendAPIException(message=msg)
+
+            msg = 'Connector (%s) did not return a hostnqn, aborting' % (
+                connector,)
+            raise exception.VolumeBackendAPIException(message=msg)
 
         lightos_volname = self._lightos_volname(volume)
         project_name = self._get_lightos_project_name(volume)
