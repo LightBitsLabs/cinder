@@ -819,11 +819,6 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             image_to/from_volume operations'
             raise exception.VolumeBackendAPIException(message=msg)
 
-        found_dsc = self.connector.find_dsc()
-        if not found_dsc:
-            LOG.warn(
-                'LIGHTOS: did not find a discovery client, continuing anyway')
-
     def get_cluster_info(self):
         status_code, cluster_info = self.cluster.send_cmd(
             cmd='get_cluster_info', timeout=self.logical_op_timeout)
