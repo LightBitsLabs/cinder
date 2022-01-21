@@ -674,9 +674,11 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 self._delete_lightos_volume(project_name, lightos_uuid)
                 # wait for openstack to call us again to create it
 
-        msg = 'Did not succeed creating LightOS volume with UUID %s \
-        status_code %s last state %s' % \
-              (lightos_uuid, status_code, vol_state)
+        msg = (
+            "Did not succeed creating LightOS volume with UUID %(uuid)s"
+            " status_code %(code)s last state %(state)s" %
+            dict(uuid=lightos_uuid, code=status_code, state=vol_state))
+        msg = _(msg)
         raise exception.VolumeBackendAPIException(message=msg)
 
     def _wait_for_snapshot_available(self, project_name,
@@ -794,9 +796,11 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             return True
 
         if not self._delete_lightos_volume(project_name, lightos_uuid):
-            msg = 'Failed to delete LightOS volume with UUID \
-             %s project %s' % (
-                lightos_uuid, project_name)
+            msg = ('Failed to delete LightOS volume with UUID'
+                   ' %(uuid)s project %(project_name)s' % (
+                       dict(uuid=lightos_uuid, project_name=project_name)))
+
+            msg = _(msg)
             raise exception.VolumeBackendAPIException(message=msg)
 
     def get_vol_by_id(self, volume):
