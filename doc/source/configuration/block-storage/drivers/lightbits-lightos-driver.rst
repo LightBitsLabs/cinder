@@ -25,7 +25,6 @@ Supported operations
 - Delete snapshot
 - Create volume from snapshot
 - Create volume from volume (clone)
-- Extend a volume
 
 LightOS OpenStack Driver Components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
