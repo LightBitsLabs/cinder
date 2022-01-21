@@ -766,7 +766,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             if status_code == httpstatus.OK:
                 break
 
-            LOG.info(
+            LOG.warn(
                 "delete_volume for volume with LightOS UUID %s failed \
                 with status code %s response %s",
                 lightos_uuid,
