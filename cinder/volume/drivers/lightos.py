@@ -608,7 +608,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         lightos_uuid = data.get('UUID')
         if not lightos_uuid:
-            LOG.error('Failed to get LightOS volume UUID',
+            LOG.error('Failed to get LightOS volume UUID status: %s, data: %s',
                       status, str(data))
             raise exception.VolumeNotFound(volume_id=volume)
 
