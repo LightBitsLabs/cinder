@@ -363,11 +363,11 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         self.configuration.append_config_values(lightos_opts)
         # connector implements NVMe/TCP initiator functionality.
         if not self.configuration.__dict__.get("initiator_connector", None):
-            self.configuration.initiator_connector = \
-                "os_brick.initiator.connector.InitiatorConnector"
+            self.configuration.initiator_connector = (
+                "os_brick.initiator.connector.InitiatorConnector")
         if not self.configuration.__dict__.get("lightos_client", None):
-            self.configuration.lightos_client = \
-                "cinder.volume.drivers.lightos.LightOSConnection"
+            self.configuration.lightos_client = (
+                "cinder.volume.drivers.lightos.LightOSConnection")
 
         initiator_connector = importutils.import_class(
             self.configuration.initiator_connector)
