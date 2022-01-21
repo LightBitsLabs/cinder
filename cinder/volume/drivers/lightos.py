@@ -53,7 +53,7 @@ lightos_opts = [
                 default='443',
                 help='The TCP/IP port at which the LightOS API'
                      ' endpoints listen.'
-                     ' Port 443 is used for HTTPS other values'
+                     ' Port 443 is used for HTTPS and other values'
                      ' are used for HTTP.'),
     cfg.StrOpt('lightos_jwt',
                default=None,
@@ -69,7 +69,7 @@ lightos_opts = [
                     ' volume.'),
     cfg.BoolOpt('lightos_default_compression_enabled',
                 default=False,
-                help='The default compression enabled setting '
+                help='The default compression enabled setting'
                      ' for new volumes.'),
     cfg.IntOpt('lightos_api_service_timeout',
                default=30,
