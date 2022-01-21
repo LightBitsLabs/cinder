@@ -420,9 +420,9 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             self._create_volume(volume,
                                 src_snapshot_lightos_name=snapshot_name)
         except Exception as e:
-            LOG.warn("Failed to create volume %s from intermediate "
-                     " snapshot %s. Trying to clean up.",
-                     src_volume_name, snapshot_name)
+            LOG.error("Failed to create volume %s from intermediate "
+                      " snapshot %s. Trying to clean up.",
+                      src_volume_name, snapshot_name)
             raise e
 
         # Delete the intermediate snapshot
