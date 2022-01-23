@@ -812,25 +812,25 @@ class LightOSVolumeDriver(driver.VolumeDriver):
     def check_for_setup_error(self):
         subsysnqn = self.cluster.subsystemNQN
         if not subsysnqn:
-            msg = 'LIGHTOS: Cinder driver requires the \
-            LightOS cluster subsysnqn'
-            raise exception.VolumeBackendAPIException(message=msg)
+            msg = ('LIGHTOS: Cinder driver requires the'
+                   ' LightOS cluster subsysnqn')
+            raise exception.VolumeBackendAPIException(message=_(msg))
 
         hostnqn = self.connector.get_hostnqn()
         if not hostnqn:
-            msg = 'LIGHTOS: Cinder driver requires a local hostnqn for \
-            image_to/from_volume operations'
-            raise exception.VolumeBackendAPIException(message=msg)
+            msg = ("LIGHTOS: Cinder driver requires a local hostnqn for"
+                   " image_to/from_volume operations")
+            raise exception.VolumeBackendAPIException(message=_(msg))
 
     def get_cluster_info(self):
         status_code, cluster_info = self.cluster.send_cmd(
             cmd='get_cluster_info', timeout=self.logical_op_timeout)
         if status_code == httpstatus.UNAUTHORIZED:
             msg = f'LIGHTOS: failed to connect to cluster. code: {status_code}'
-            raise exception.InvalidAuthKey(message=msg)
+            raise exception.InvalidAuthKey(message=_(msg))
         if status_code != httpstatus.OK:
             msg = 'LIGHTOS: Could not connect to LightOS cluster'
-            raise exception.VolumeBackendAPIException(message=msg)
+            raise exception.VolumeBackendAPIException(message=_(msg))
 
         LOG.info("Connected to LightOS cluster %s subsysnqn %s",
                  cluster_info['UUID'], cluster_info['subsystemNQN'])
@@ -842,7 +842,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             cmd='get_cluster', timeout=self.logical_op_timeout)
         if status_code != httpstatus.OK:
             msg = 'LIGHTOS: Could not connect to LightOS cluster'
-            raise exception.VolumeBackendAPIException(message=msg)
+            raise exception.VolumeBackendAPIException(message=_(msg))
 
         return cluster_info['statistics']
 
@@ -868,7 +868,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         # bail out if we got here, timeout elapsed
         msg = 'Failed to get nodes, last status was {} nodes_info {}'.format(
             status_code, nodes_info)
-        raise exception.VolumeBackendAPIException(message=msg)
+        raise exception.VolumeBackendAPIException(message=_(msg))
 
     def do_setup(self, context):
 
@@ -1294,12 +1294,12 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 time.sleep(1)
 
             if status_code_create != httpstatus.OK:
-                msg = 'Did not succeed creating LightOS snapshot %s \
-                       project %s' \
-                      'status code %s response %s' % \
-                      (snapshot_name, project_name, status_code_create,
-                       response)
-                raise exception.VolumeBackendAPIException(message=msg)
+                msg = ('Did not succeed creating LightOS snapshot %s'
+                       ' project %s'
+                       ' status code %s response %s' %
+                       (snapshot_name, project_name, status_code_create,
+                        response))
+                raise exception.VolumeBackendAPIException(message=_(msg))
 
         state = self._wait_for_snapshot_available(project_name,
                                                   timeout=
@@ -1323,10 +1323,9 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         except exception.CinderException as ex:
             LOG.warn("Error deleting snapshot during cleanup: %s", ex)
 
-        msg = 'Did not succeed creating LightOS snapshot %s project \
-         %s last state %s' % \
-              (snapshot_name, project_name, state)
-        raise exception.VolumeBackendAPIException(message=msg)
+        msg = ('Did not succeed creating LightOS snapshot %s project'
+               '%s last state %s' % (snapshot_name, project_name, state))
+        raise exception.VolumeBackendAPIException(message=_(msg))
 
     def delete_snapshot(self, snapshot):
         lightos_snapshot_name = self._lightos_snapshotname(snapshot["id"])
@@ -1348,10 +1347,9 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         if status_code == httpstatus.NOT_FOUND:
             return None
 
-        msg = 'Unable to fetch UUID of snapshot named %s. status code \
-         %s data %s' % \
-              (lightos_snapshot_name, status_code, data)
-        raise exception.VolumeBackendAPIException(message=msg)
+        msg = ('Unable to fetch UUID of snapshot named %s. status code'
+               ' %s data %s' % (lightos_snapshot_name, status_code, data))
+        raise exception.VolumeBackendAPIException(message=_(msg))
 
     def _delete_lightos_snapshot(self, project_name, snapshot_name):
         snapshot_uuid = self._get_lightos_snapshot_uuid(
@@ -1397,23 +1395,22 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             found_dsc)
         if not hostnqn:
             msg = 'Connector (%s) did not contain a hostnqn, aborting' % (
-                connector,)
-            raise exception.VolumeBackendAPIException(message=msg)
+                connector)
+            raise exception.VolumeBackendAPIException(message=_(msg))
 
         if not found_dsc:
-            msg = 'Connector (%s) did not indicate a discovery \
-            client, aborting' % (
-                connector,)
-            raise exception.VolumeBackendAPIException(message=msg)
+            msg = ('Connector (%s) did not indicate a discovery'
+                   'client, aborting' % (connector))
+            raise exception.VolumeBackendAPIException(message=_(msg))
 
         lightos_volname = self._lightos_volname(volume)
         project_name = self._get_lightos_project_name(volume)
         success = self.add_volume_acl(project_name, volume, hostnqn)
         if not success or not self._wait_for_volume_acl(
                 project_name, lightos_volname, hostnqn, True):
-            msg = 'Could not add ACL for hostnqn %s LightOS volume \
-            %s, aborting' % (hostnqn, lightos_volname)
-            raise exception.VolumeBackendAPIException(message=msg)
+            msg = ('Could not add ACL for hostnqn %s LightOS volume'
+                   ' %s, aborting' % (hostnqn, lightos_volname))
+            raise exception.VolumeBackendAPIException(message=_(msg))
 
         props = self._get_connection_properties(project_name, volume)
         props['hostnqn'] = hostnqn
@@ -1440,8 +1437,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 return
 
             msg = 'Connector (%s) did not return a hostnqn, aborting' % (
-                connector,)
-            raise exception.VolumeBackendAPIException(message=msg)
+                connector)
+            raise exception.VolumeBackendAPIException(message=_(msg))
 
         lightos_volname = self._lightos_volname(volume)
         project_name = self._get_lightos_project_name(volume)
