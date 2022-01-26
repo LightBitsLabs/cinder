@@ -799,8 +799,6 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             msg = ('Failed to delete LightOS volume with UUID'
                    ' %(uuid)s project %(project_name)s' % (
                        dict(uuid=lightos_uuid, project_name=project_name)))
-
-            msg = _(msg)
             raise exception.VolumeBackendAPIException(message=msg)
 
     def get_vol_by_id(self, volume):
@@ -814,13 +812,13 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         if not subsysnqn:
             msg = ('LIGHTOS: Cinder driver requires the'
                    ' LightOS cluster subsysnqn')
-            raise exception.VolumeBackendAPIException(message=_(msg))
+            raise exception.VolumeBackendAPIException(message=msg)
 
         hostnqn = self.connector.get_hostnqn()
         if not hostnqn:
             msg = ("LIGHTOS: Cinder driver requires a local hostnqn for"
                    " image_to/from_volume operations")
-            raise exception.VolumeBackendAPIException(message=_(msg))
+            raise exception.VolumeBackendAPIException(message=msg)
 
     def get_cluster_info(self):
         status_code, cluster_info = self.cluster.send_cmd(
