@@ -408,7 +408,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             self._create_snapshot(project_name,
                                   snapshot_name, src_volume_name)
         except Exception as e:
-            LOG.warn(
+            LOG.warning(
                 "Failed to create intermediate snapshot \
                  %s from source volume %s.",
                 snapshot_name,
@@ -430,7 +430,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             try:
                 self._delete_lightos_snapshot(project_name, snapshot_name)
             except Exception as e:
-                LOG.warn("Failed to delete the intermediate snapshot %s for"
+                LOG.warning("Failed to delete the intermediate snapshot %s for"
                          " volume %s. Trying to clean up.",
                          snapshot_name, src_volume_name)
                 raise e
@@ -661,7 +661,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 return
 
             # if volume was created in failed state we should clean it up
-            LOG.warn(
+            LOG.warning(
                 'LightOS volume with UUID %s project %s last_state is %s',
                 lightos_uuid,
                 project_name,
@@ -766,7 +766,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             if status_code == httpstatus.OK:
                 break
 
-            LOG.warn(
+            LOG.warning(
                 "delete_volume for volume with LightOS UUID %s failed \
                 with status code %s response %s",
                 lightos_uuid,
@@ -804,10 +804,10 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             raise exception.VolumeBackendAPIException(message=msg)
 
     def get_vol_by_id(self, volume):
-        LOG.warn('UNIMPLEMENTED: get vol by id')
+        LOG.warning('UNIMPLEMENTED: get vol by id')
 
     def get_vols(self):
-        LOG.warn('UNIMPLEMENTED: get vols')
+        LOG.warning('UNIMPLEMENTED: get vols')
 
     def check_for_setup_error(self):
         subsysnqn = self.cluster.subsystemNQN
@@ -898,10 +898,10 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             except Exception as e:
                 # bail out if the time out elapsed...
                 if time.time() >= end:
-                    LOG.warn('Timed out extend volume operation')
+                    LOG.warning('Timed out extend volume operation')
                     raise e
                 # if we still have more time, just print the exception
-                LOG.warn(
+                LOG.warning(
                     'caught this in extend_volume() ... will retry: %s',
                     str(e))
                 time.sleep(1)
@@ -1036,12 +1036,12 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         lightos_uuid = data.get('UUID')
         if not lightos_uuid:
-            LOG.warn('Got LightOS volume without UUID?! data: %s', data)
+            LOG.warning('Got LightOS volume without UUID?! data: %s', data)
             return False
 
         acl = data.get('acl')
         if not acl:
-            LOG.warn('Got LightOS volume without ACL?! data: %s', data)
+            LOG.warning('Got LightOS volume without ACL?! data: %s', data)
             return False
 
         acl = acl.get('values', [])
@@ -1090,23 +1090,23 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         lightos_uuid = data.get('UUID')
         if not lightos_uuid:
-            LOG.warn('Got LightOS volume without UUID?! data: %s', data)
+            LOG.warning('Got LightOS volume without UUID?! data: %s', data)
             return False
 
         acl = data.get('acl')
         if not acl:
-            LOG.warn('Got LightOS volume without ACL?! data: %s', data)
+            LOG.warning('Got LightOS volume without ACL?! data: %s', data)
             return False
 
         acl = acl.get('values')
         if not acl:
-            LOG.warn('Got LightOS volume without ACL values?! data: %s', data)
+            LOG.warning('Got LightOS volume without ACL values?! data: %s', data)
             return False
 
         try:
             acl.remove(acl_to_remove)
         except ValueError:
-            LOG.warn(
+            LOG.warning(
                 'Could not remove acl %s from LightOS volume %s project \
                 %s with acl %s',
                 acl_to_remove,
@@ -1143,7 +1143,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         lightos_uuid = data.get('UUID')
         if not lightos_uuid:
-            LOG.warn('Got LightOS volume without UUID?! data: %s', data)
+            LOG.warning('Got LightOS volume without UUID?! data: %s', data)
             return False
 
         return self.set_volume_acl(
@@ -1204,7 +1204,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         # bail out if the time out elapsed...
         if time.time() >= end:
-            LOG.warn(
+            LOG.warning(
                 'Timed out %s(%s project %s)',
                 func,
                 lightos_volname,
@@ -1216,7 +1216,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         vol_state = self._wait_for_volume_available(
             project_name, timeout=end - time.time(), vol_name=lightos_volname)
         if vol_state != 'Available':
-            LOG.warn(
+            LOG.warning(
                 'Timed out waiting for volume %s project %s to stabilize, \
                 last state %s',
                 lightos_volname,
@@ -1240,7 +1240,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 vol_name=lightos_volname)
             if status == httpstatus.OK:
                 if not resp or not resp.get('acl'):
-                    LOG.warn(
+                    LOG.warning(
                         'Got LightOS volume %s without ACL?! data: %s',
                         lightos_volname,
                         resp)
@@ -1259,7 +1259,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 status,
                 resp)
             time.sleep(1)
-        LOG.warn(
+        LOG.warning(
             'ACL did not settle for volume %s, giving up',
             lightos_volname)
         return False
@@ -1321,7 +1321,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         try:
             self._delete_lightos_snapshot(project_name, snapshot_name)
         except exception.CinderException as ex:
-            LOG.warn("Error deleting snapshot during cleanup: %s", ex)
+            LOG.warning("Error deleting snapshot during cleanup: %s", ex)
 
         msg = ('Did not succeed creating LightOS snapshot %s project'
                '%s last state %s' % (snapshot_name, project_name, state))
@@ -1355,7 +1355,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         snapshot_uuid = self._get_lightos_snapshot_uuid(
             project_name, snapshot_name)
         if snapshot_uuid is None:
-            LOG.warn(
+            LOG.warning(
                 "Unable to find lightos snapshot %s project %s for deletion",
                 snapshot_name,
                 project_name)
@@ -1376,10 +1376,10 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                     "Successfully detected that snapshot %s was deleted.",
                     snapshot_name)
                 return True
-            LOG.warn("Snapshot %s was not deleted. It is in state %s.",
+            LOG.warning("Snapshot %s was not deleted. It is in state %s.",
                      snapshot_name, state)
             return False
-        LOG.warn(
+        LOG.warning(
             "Request to delete snapshot %s"
             " was rejected with status code %s.",
             snapshot_name,
@@ -1445,7 +1445,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         success = self.remove_volume_acl(project_name, volume, hostnqn)
         if not success or not self._wait_for_volume_acl(
                 project_name, lightos_volname, hostnqn, False):
-            LOG.warn(
+            LOG.warning(
                 'Could not remove ACL for hostnqn %s LightOS \
                 volume %s, limping along',
                 hostnqn,
