@@ -431,8 +431,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 self._delete_lightos_snapshot(project_name, snapshot_name)
             except Exception as e:
                 LOG.warning("Failed to delete the intermediate snapshot %s for"
-                         " volume %s. Trying to clean up.",
-                         snapshot_name, src_volume_name)
+                            " volume %s. Trying to clean up.",
+                            snapshot_name, src_volume_name)
                 raise e
 
     def create_export(self, context, volume, vg=None):
@@ -1098,7 +1098,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         acl = acl.get('values')
         if not acl:
-            LOG.warning('Got LightOS volume without ACL values?! data: %s', data)
+            LOG.warning(
+                'Got LightOS volume without ACL values?! data: %s', data)
             return False
 
         try:
@@ -1375,7 +1376,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                     snapshot_name)
                 return True
             LOG.warning("Snapshot %s was not deleted. It is in state %s.",
-                     snapshot_name, state)
+                        snapshot_name, state)
             return False
         LOG.warning(
             "Request to delete snapshot %s"
