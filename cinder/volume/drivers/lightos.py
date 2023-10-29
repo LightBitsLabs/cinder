@@ -170,6 +170,9 @@ class LightOSConnection(object):
                                   'acl': {
                                       'values': kwargs.get('acl'),
                                   },
+                                  'IPAcl': {
+                                      'values': kwargs.get('ip_acl'),
+                                  },
                               }),
 
             'extend_volume': ('PUT',
@@ -1033,17 +1036,18 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         return server_properties
 
-    def set_volume_acl(self, project_name, lightos_uuid, acl, etag):
+    def set_volume_acl(self, project_name, lightos_uuid, acl, ip_acl,etag):
         return self.cluster.send_cmd(
             cmd='update_volume',
             project_name=project_name,
             timeout=self.logical_op_timeout,
             volume_uuid=lightos_uuid,
             acl=acl,
+            ip_acl=ip_acl,
             etag=etag
         )
 
-    def __add_volume_acl(self, project_name, lightos_volname, acl_to_add):
+    def __add_volume_acl(self, project_name, lightos_volname, acl_to_add,host_ips):
         (status, data) = self._get_lightos_volume(project_name,
                                                   self.logical_op_timeout,
                                                   vol_name=lightos_volname)
@@ -1062,7 +1066,14 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             LOG.warning('Got LightOS volume without ACL?! data: %s', data)
             return False
 
+        ip_acl= data.get('IPAcl')         
+        if not ip_acl:
+           LOG.warning('Got LightOS volume without IP ACL?! data: %s', data)
+           return False
+
         acl = acl.get('values', [])
+        ip_acl = ip_acl.get('values', [])
+        
 
         # remove ALLOW_NONE and add our acl_to_add if not already there
         if 'ALLOW_NONE' in acl:
@@ -1070,15 +1081,24 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         if acl_to_add not in acl:
             acl.append(acl_to_add)
 
+        if 'ALLOW_ANY' in ip_acl:
+            ip_acl.remove('ALLOW_ANY')
+        
+        if 'ALLOW_NONE' in ip_acl:
+            ip_acl.remove('ALLOW_NONE')
+        
+        ip_acl=set(ip_acl).union(set(host_ips))
+        ip_acl= list(ip_acl)
+        
         return self.set_volume_acl(
             project_name,
             lightos_uuid,
-            acl,
+            acl,ip_acl,
             etag=data.get(
                 'ETag',
                 ''))
 
-    def add_volume_acl(self, project_name, volume, acl_to_add):
+    def add_volume_acl(self, project_name, volume, acl_to_add,host_ips):
         LOG.debug(
             'add_volume_acl got volume %s project %s acl %s',
             volume,
@@ -1089,13 +1109,13 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             self.__add_volume_acl,
             project_name,
             lightos_volname,
-            acl_to_add)
+            acl_to_add,host_ips)
 
     def __remove_volume_acl(
             self,
             project_name,
             lightos_volname,
-            acl_to_remove):
+            acl_to_remove,host_ips):
         (status, data) = self._get_lightos_volume(project_name,
                                                   self.logical_op_timeout,
                                                   vol_name=lightos_volname)
@@ -1121,7 +1141,6 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             LOG.warning(
                 'Got LightOS volume without ACL values?! data: %s', data)
             return False
-
         try:
             acl.remove(acl_to_remove)
         except ValueError:
@@ -1137,10 +1156,34 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         if not acl:
             acl.append('ALLOW_NONE')
 
+        ip_acl = data.get('IPAcl')
+        if not ip_acl:
+            LOG.warning('Got LightOS volume without IP ACL?! data: %s', data)
+            return False
+
+        ip_acl = ip_acl.get('values')
+        if not ip_acl:
+            LOG.warning(
+                'Got LightOS volume without IP ACL values?! data: %s', data)
+            return False
+      
+        for ip in host_ips:
+            try:
+                ip_acl.remove(ip)
+            except ValueError:
+                LOG.warning(
+                'Could not find matching ip %s in ip-acl %s of LightOS volume',
+                ip,
+                lightos_volname
+                )
+
+        if not ip_acl:
+            ip_acl.append('ALLOW_NONE')        
+
         return self.set_volume_acl(
             project_name,
             lightos_uuid,
-            acl,
+            acl,ip_acl,
             etag=data.get(
                 'ETag',
                 ''))
@@ -1149,7 +1192,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             self,
             project_name,
             lightos_volname,
-            acl):
+            acl,host_ips):
         status, data = self._get_lightos_volume(project_name,
                                                 self.logical_op_timeout,
                                                 vol_name=lightos_volname)
@@ -1168,12 +1211,12 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         return self.set_volume_acl(
             project_name,
             lightos_uuid,
-            acl,
+            acl,host_ips,
             etag=data.get(
                 'ETag',
                 ''))
 
-    def remove_volume_acl(self, project_name, volume, acl_to_remove):
+    def remove_volume_acl(self, project_name, volume, acl_to_remove,host_ips):
         lightos_volname = self._lightos_volname(volume)
         LOG.debug('remove_volume_acl volume %s project %s acl %s',
                   volume, project_name, acl_to_remove)
@@ -1181,7 +1224,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             self.__remove_volume_acl,
             project_name,
             lightos_volname,
-            acl_to_remove)
+            acl_to_remove,host_ips)
 
     def remove_all_volume_acls(self, project_name, volume):
         lightos_volname = self._lightos_volname(volume)
@@ -1191,9 +1234,9 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             self.__overwrite_volume_acl,
             project_name,
             lightos_volname,
-            ['ALLOW_NONE'])
+            ['ALLOW_NONE'],['ALLOW_NONE'])
 
-    def update_volume_acl(self, func, project_name, lightos_volname, acl):
+    def update_volume_acl(self, func, project_name, lightos_volname, acl,host_ips):
         # loop because lightos api is async
         end = time.time() + self.logical_op_timeout
         first_iteration = True
@@ -1201,7 +1244,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             if not first_iteration:
                 time.sleep(1)
             first_iteration = False
-            res = func(project_name, lightos_volname, acl)
+            res = func(project_name, lightos_volname, acl,host_ips)
             if not isinstance(res, tuple):
                 LOG.debug('Update_volume: func %s(%s project %s) failed',
                           func, lightos_volname, project_name)
@@ -1409,6 +1452,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
     def initialize_connection(self, volume, connector):
         hostnqn = connector.get('nqn')
         found_dsc = connector.get('found_dsc')
+        host_ips = connector.get('host_ips',[])
+        LOG.info('Host current IP(s) are ',host_ips)
         LOG.debug(
             'initialize_connection: connector hostnqn is %s found_dsc %s',
             hostnqn,
@@ -1422,10 +1467,15 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             msg = ('Connector (%s) did not indicate a discovery'
                    'client, aborting' % (connector))
             raise exception.VolumeBackendAPIException(message=_(msg))
-
+        
+        if not host_ips:
+            msg = ('Connector (%s) did not find host IPs '
+                   'client, aborting' % (connector))
+            raise exception.VolumeBackendAPIException(message=_(msg))
+        
         lightos_volname = self._lightos_volname(volume)
         project_name = self._get_lightos_project_name(volume)
-        success = self.add_volume_acl(project_name, volume, hostnqn)
+        success = self.add_volume_acl(project_name, volume, hostnqn,host_ips)
         if not success or not self._wait_for_volume_acl(
                 project_name, lightos_volname, hostnqn, True):
             msg = ('Could not add ACL for hostnqn %s LightOS volume'
@@ -1438,6 +1488,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
     def terminate_connection(self, volume, connector, **kwargs):
         force = 'force' in kwargs
         hostnqn = connector.get('nqn') if connector else None
+        host_ips = connector.get('host_ips',[]) 
         LOG.debug(
             'terminate_connection: force %s kwargs %s hostnqn %s',
             force,
@@ -1461,7 +1512,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         lightos_volname = self._lightos_volname(volume)
         project_name = self._get_lightos_project_name(volume)
-        success = self.remove_volume_acl(project_name, volume, hostnqn)
+        success = self.remove_volume_acl(project_name, volume, hostnqn,host_ips)
         if not success or not self._wait_for_volume_acl(
                 project_name, lightos_volname, hostnqn, False):
             LOG.warning(
