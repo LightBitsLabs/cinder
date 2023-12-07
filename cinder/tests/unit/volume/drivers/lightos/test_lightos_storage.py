@@ -63,6 +63,7 @@ FAKE_LIGHTOS_CLUSTER_INFO: Dict[str, str] = {
 }
 
 FAKE_CLIENT_HOSTNQN = "hostnqn1"
+FAKE_HOST_IPS = ['10.10.0.1']
 VOLUME_BACKEND_NAME = "lightos_backend"
 RESERVED_PERCENTAGE = 30
 DEVICE_SCAN_ATTEMPTS_DEFAULT = 5
@@ -85,6 +86,7 @@ class InitiatorConnectorFactoryMocker:
 class InitialConnectorMock:
     nqn = FAKE_CLIENT_HOSTNQN
     found_discovery_client = True
+    host_ips = FAKE_HOST_IPS
 
     def get_hostnqn(self):
         return self.__class__.nqn
@@ -92,15 +94,18 @@ class InitialConnectorMock:
     def find_dsc(self):
         return self.__class__.found_discovery_client
 
+    def get_host_ips(self):
+        return self.__class__.host_ips
+
     def get_connector_properties(self, root):
         return dict(nqn=self.__class__.nqn,
-                    found_dsc=self.__class__.found_discovery_client)
+                    found_dsc=self.__class__.found_discovery_client,
+                    host_ips=self.__class__.host_ips)
 
 
 def get_connector_properties():
     connector = InitialConnectorMock()
-    return dict(nqn=connector.get_hostnqn(),
-                found_dsc=connector.find_dsc())
+    return connector.get_connector_properties(None)
 
 
 def get_vol_etag(volume):
@@ -141,6 +146,7 @@ class DBMock(object):
                                      if vol["name"] == volume["name"]]), None)
         if not existing_volume:
             volume["UUID"] = str(uuid.uuid4())
+            volume["IPAcl"] = {'values': FAKE_HOST_IPS}
             volumes.append(volume)
             return httpstatus.OK, volume
         return httpstatus.CONFLICT, None
@@ -274,6 +280,7 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         configuration.lightos_intermediate_snapshot_name_prefix = 'for_clone_'
         configuration.lightos_default_compression_enabled = (
             DEFAULT_COMPRESSION)
+        configuration.lightos_use_ipacl = True
         configuration.lightos_default_num_replicas = 3
         configuration.num_volume_device_scan_tries = (
             DEVICE_SCAN_ATTEMPTS_DEFAULT)
