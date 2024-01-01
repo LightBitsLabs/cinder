@@ -1368,7 +1368,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                 )
 
                 if status_code_create in (httpstatus.BAD_REQUEST,
-                       httpstatus.INTERNAL_SERVER_ERROR):
+                       httpstatus.INTERNAL_SERVER_ERROR, 
+                       httpstatus.SERVICE_UNAVAILABLE):
                     
                     LOG.debug('Creating new snapshot %s under project %s' 
                               ' failed, received error with http-status %s',
