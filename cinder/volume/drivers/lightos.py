@@ -1297,7 +1297,10 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             project_name, self.logical_op_timeout,
             snapshot_name=snapshot_name)
         if status_code_get != httpstatus.OK:
-            end = time.time() + self.logical_op_timeout
+            # These additional 20 seconds will increase request timeout
+            # and avoid failures when multiple clients are requesting large
+            # number of snapshots from same source volume.
+            end = time.time() + self.logical_op_timeout + 20
             while (time.time() < end):
                 (status_code_create, response) = self.cluster.send_cmd(
                     cmd='create_snapshot',
@@ -1307,8 +1310,13 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                     src_volume_name=src_volume_name,
                 )
 
-                if status_code_create == httpstatus.INTERNAL_SERVER_ERROR:
-                    pass
+                if status_code_create in (httpstatus.BAD_REQUEST,
+                                          httpstatus.INTERNAL_SERVER_ERROR,
+                                          httpstatus.SERVICE_UNAVAILABLE):
+
+                    LOG.debug('Creating new snapshot %s under project %s'
+                              ' failed, received error with http-status %s',
+                              snapshot_name, project_name, status_code_create)
                 else:
                     break
 
