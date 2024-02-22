@@ -25,6 +25,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import importutils
 from oslo_utils import units
+from oslo_utils import netutils
 import requests
 import urllib3
 
@@ -1091,12 +1092,41 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         if acl_to_add not in acl:
            acl.append(acl_to_add)
 
-        ip_acl=[]    
+        if 'ALLOW_NONE' in ip_acl:
+            ip_acl.remove('ALLOW_NONE')
+        
         if self.use_ip_acl():
-           ip_acl=host_ips
+            ip_acl = list(set(ip_acl).union(set(host_ips)))
         else:
            ip_acl.append('ALLOW_ANY')
-                
+
+        # The max (16) elemenets are allowed in IPACL.
+        # if elements are more than 16 then remove 
+        # less-frequently used IPv6 address(s), and IPv4 if needed.     
+               
+        ipv4addrs = [addr for addr in ip_acl if netutils.is_valid_ipv4(addr)]
+        ipv6addrs = [addr for addr in ip_acl if netutils.is_valid_ipv6(addr)]
+        
+        IpAcl_size = 16
+        if len(ipv4addrs) > IpAcl_size:
+            LOG.warning('IPv4 address(es) are more than maximum (%s)'
+                        ' allowed in IP-ACL of volume, therefore reducing'
+                        ' IPv4 address(es) written to IP-ACL of volume %s'
+                        ' of project %s', IpAcl_size, lightos_volname,
+                         project_name) 
+             
+            ip_acl = ipv4addrs[0 : IpAcl_size]
+
+        elif len(ip_acl) > IpAcl_size:
+            LOG.warning('Combined IPv4 and IPv6 address(es) are more than'
+                        ' maximum (%s) allowed in IP-ACL of volume, therefore'
+                        ' reducing IPv6 address(es) written to IP-ACL of'
+                        ' volume %s of project %s', IpAcl_size, 
+                        lightos_volname, project_name) 
+             
+            ipv6addrs_count = IpAcl_size - len(ipv4addrs)
+            ip_acl = ipv4addrs + (ipv6addrs[0 : ipv6addrs_count])
+         
         return self.set_volume_acl(
             project_name,
             lightos_uuid,
