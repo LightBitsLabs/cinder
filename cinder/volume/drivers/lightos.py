@@ -1106,7 +1106,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         if self.use_ip_acl():
             ip_acl = list(set(ip_acl).union(set(host_ips)))
         else:
-           ip_acl.append('ALLOW_ANY')
+           ip_acl = ['ALLOW_ANY']
 
         # The max (16) elemenets are allowed in IPACL.
         # if elements are more than 16 then remove 
