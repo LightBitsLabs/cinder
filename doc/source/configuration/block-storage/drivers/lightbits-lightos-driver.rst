@@ -26,6 +26,10 @@ Supported operations
 - Create volume from snapshot
 - Create volume from volume (clone)
 - Active active deployment support
+- Multi Tenancy support 
+
+Multi Tenancy support for the Lightbits cinder driver includes the ability
+to map OpenStack project to Lightbits project via volume type and storage backend. 
 
 LightOS OpenStack Driver Components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -84,9 +88,9 @@ and
 - The default time to wait for API service response is 30 seconds per
   API endpoint.
 
-Creating volumes with non-default compression and number of replicas
-settings can be done through the volume types mechanism. To create a
-new volume type with compression enabled:
+Creating volumes with non-default compression, number of replicas and 
+multi tenancy can be done through the volume types mechanism. To create a
+new volume type with compression or multi tenancy enabled:
 
 .. code-block:: console
 
@@ -109,6 +113,12 @@ Then create a new volume with one of these volume types:
 .. code-block:: console
 
    $ openstack volume create --size <size> --type <type name> <vol name>
+
+Create a volume type for multi tenancy:
+
+.. code-block:: console
+
+   $ openstack volume type create --property lightos:project_name=project-01 type-with-mt
 
 NVNe/TCP and Asymmetric Namespace Access (ANA)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
