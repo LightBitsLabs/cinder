@@ -116,7 +116,7 @@ Then create a new volume with one of these volume types:
 Create a volume type for multi tenancy:
 
 .. code-block:: console
-   
+
    $ openstack volume type create --property lightos:project_name=project-01 type-with-mt
 
 NVNe/TCP and Asymmetric Namespace Access (ANA)
