@@ -87,7 +87,7 @@ and
 - The default time to wait for API service response is 30 seconds per
   API endpoint.
 
-Creating volumes with non-default compression, number of replicas and 
+Creating volumes with non-default compression, number of replica(s) and
 multi tenancy can be done through the volume types mechanism. To create a
 new volume type with compression or multi tenancy enabled:
 
@@ -116,9 +116,9 @@ Then create a new volume with one of these volume types:
 Create a volume type for multi tenancy:
 
 .. code-block:: console
-   
+
    $ openstack volume type create --property lightos:project_name=project-01 type-with-mt
-   
+
 NVNe/TCP and Asymmetric Namespace Access (ANA)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
