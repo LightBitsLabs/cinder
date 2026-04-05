@@ -1129,6 +1129,10 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             self._get_lightos_uuid(project_name, volume))
         server_properties['subsysnqn'] = self.cluster.subsystemNQN
 
+        specs = getattr(volume.volume_type, 'extra_specs', {})
+        server_properties['iothread'] = specs.get(
+            'lightos:iothread', '<is> False') == '<is> True'
+
         return server_properties
 
     def set_volume_acl(self, project_name, lightos_uuid, acl, ip_acl, etag):
