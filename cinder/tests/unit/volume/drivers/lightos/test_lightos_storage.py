@@ -33,6 +33,7 @@ from cinder.tests.unit import test
 from cinder.tests.unit import utils as test_utils
 from cinder.volume import configuration as conf
 from cinder.volume.drivers import lightos
+from cinder.volume import manager as volume_manager
 
 
 FAKE_LIGHTOS_CLUSTER_NODES: Dict[str, List] = {
@@ -989,6 +990,214 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
 
         db.volume_destroy(self.ctxt, volume.id)
         db.volume_destroy(self.ctxt, clone.id)
+
+    def _project_types(self):
+        """A volume type per LightOS project."""
+        src_type = test_utils.create_volume_type(
+            self.ctxt, self,
+            extra_specs={'lightos:project_name': 'goose'},
+            name='goose_type')
+        dst_type = test_utils.create_volume_type(
+            self.ctxt, self,
+            extra_specs={'lightos:project_name': 'fox'},
+            name='fox_type')
+        return src_type, dst_type
+
+    def test_create_volume_records_project_and_uuid(self):
+        """A created volume carries its LightOS address."""
+        self.driver.do_setup(None)
+
+        vol_type = test_utils.create_volume_type(
+            self.ctxt, self,
+            extra_specs={'lightos:project_name': 'goose'},
+            name='goose_type')
+        volume = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=vol_type.id)
+
+        model_update = self.driver.create_volume(volume)
+
+        lightos_uuid = self.db.get_project('goose')['volumes'][0]['UUID']
+        self.assertEqual({'provider_id': 'goose %s' % lightos_uuid},
+                         model_update)
+
+        self.driver.delete_volume(volume)
+        db.volume_destroy(self.ctxt, volume.id)
+
+    def test_get_lightos_project_name_prefers_provider_id(self):
+        """provider_id wins over a volume type that moved on."""
+        self.driver.do_setup(None)
+
+        vol_type = test_utils.create_volume_type(
+            self.ctxt, self,
+            extra_specs={'lightos:project_name': 'fox'},
+            name='fox_type')
+        volume = test_utils.create_volume(
+            self.ctxt, size=4, volume_type_id=vol_type.id,
+            provider_id='goose 5eb8d450-98e5-4667-b148-6652ceddcdbf')
+
+        self.assertEqual('goose',
+                         self.driver._get_lightos_project_name(volume))
+        self.assertEqual('5eb8d450-98e5-4667-b148-6652ceddcdbf',
+                         self.driver._get_lightos_uuid('goose', volume))
+
+        db.volume_destroy(self.ctxt, volume.id)
+
+    def test_get_lightos_project_name_falls_back_to_volume_type(self):
+        """Volumes with no recorded project still resolve one."""
+        self.driver.do_setup(None)
+
+        vol_type = test_utils.create_volume_type(
+            self.ctxt, self,
+            extra_specs={'lightos:project_name': 'goose'},
+            name='goose_type')
+        legacy = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=vol_type.id)
+        untyped = test_utils.create_volume(self.ctxt, size=4)
+
+        self.assertIsNone(legacy.provider_id)
+        self.assertEqual('goose',
+                         self.driver._get_lightos_project_name(legacy))
+        self.assertEqual(lightos.LIGHTOS_DEFAULT_PROJECT_NAME,
+                         self.driver._get_lightos_project_name(untyped))
+
+        db.volume_destroy(self.ctxt, legacy.id)
+        db.volume_destroy(self.ctxt, untyped.id)
+
+    def test_get_lightos_project_name_malformed_provider_id(self):
+        """A provider_id we cannot parse must not break the volume."""
+        self.driver.do_setup(None)
+
+        vol_type = test_utils.create_volume_type(
+            self.ctxt, self,
+            extra_specs={'lightos:project_name': 'goose'},
+            name='goose_type')
+        volume = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=vol_type.id,
+                                          provider_id='garbage')
+
+        self.assertEqual('goose',
+                         self.driver._get_lightos_project_name(volume))
+
+        db.volume_destroy(self.ctxt, volume.id)
+
+    def test_update_provider_info_stamps_volumes_missing_it(self):
+        """Volumes created before we recorded provider_id get stamped."""
+        self.driver.do_setup(None)
+
+        src_type, _ = self._project_types()
+        legacy = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=src_type.id)
+        self.driver.create_volume(legacy)
+        gone = test_utils.create_volume(self.ctxt, size=4,
+                                        volume_type_id=src_type.id)
+
+        updates, snap_updates = self.driver.update_provider_info(
+            [legacy, gone], [])
+
+        lightos_uuid = self.db.get_project('goose')['volumes'][0]['UUID']
+        self.assertEqual([{'id': legacy.id,
+                           'provider_id': 'goose %s' % lightos_uuid}],
+                         updates)
+        self.assertIsNone(snap_updates)
+
+        self.driver.delete_volume(legacy)
+        db.volume_destroy(self.ctxt, legacy.id)
+        db.volume_destroy(self.ctxt, gone.id)
+
+    def _retype_across_projects(self, src_type, dst_type, stamp_source=True):
+        """Run a cross-project retype the way the volume manager runs it."""
+        volume = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=src_type.id)
+        model_update = self.driver.create_volume(volume)
+        if stamp_source:
+            volume.update(model_update)
+            volume.save()
+
+        # Cinder copies the data into a new volume in the destination
+        # project, then hands both records to the driver.
+        new_volume = test_utils.create_volume(self.ctxt, size=4,
+                                              volume_type_id=dst_type.id)
+        new_volume.update(self.driver.create_volume(new_volume))
+        new_volume.save()
+
+        fake_manager = mock.Mock()
+        fake_manager.driver = self.driver
+        volume_manager.VolumeManager.update_migrated_volume(
+            fake_manager, self.ctxt, volume, new_volume, 'available')
+        volume.refresh()
+        new_volume.refresh()
+
+        # Swap the DB records. updated_new is the throwaway record pointing
+        # at the source volume, which Cinder deletes next.
+        updated_new = volume.finish_volume_migration(new_volume)
+        return volume, updated_new
+
+    def test_retype_across_projects_deletes_the_source_volume(self):
+        """Retyping across projects must not leak the source volume."""
+        self.driver.do_setup(None)
+        src_type, dst_type = self._project_types()
+
+        volume, updated_new = self._retype_across_projects(src_type, dst_type)
+
+        self.assertEqual(1, len(self.db.get_project('goose')['volumes']))
+        self.assertEqual(1, len(self.db.get_project('fox')['volumes']))
+
+        # The throwaway record points at the goose volume but carries the
+        # fox volume type.
+        self.assertEqual(
+            'fox', self.driver._get_volume_type_project_name(updated_new))
+
+        self.driver.delete_volume(updated_new)
+
+        self.assertEqual(0, len(self.db.get_project('goose')['volumes']),
+                         'the source volume was left behind in goose')
+        self.assertEqual(1, len(self.db.get_project('fox')['volumes']))
+        # The surviving record now addresses the migrated volume in 'fox'.
+        self.assertEqual('fox',
+                         self.driver._get_lightos_project_name(volume))
+
+        self.driver.delete_volume(volume)
+        self.assertEqual(0, len(self.db.get_project('fox')['volumes']))
+
+        db.volume_destroy(self.ctxt, volume.id)
+        db.volume_destroy(self.ctxt, updated_new.id)
+
+    def test_retype_across_projects_after_provider_info_backfill(self):
+        """A volume stamped at service start is not leaked either."""
+        self.driver.do_setup(None)
+        src_type, dst_type = self._project_types()
+
+        # Nothing hands the project over for an unstamped volume, so the
+        # backfill at service start is what makes this safe.
+        volume = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=src_type.id)
+        self.driver.create_volume(volume)
+        updates = self.driver.update_provider_info([volume], [])[0]
+        volume.update({'provider_id': updates[0]['provider_id']})
+        volume.save()
+
+        new_volume = test_utils.create_volume(self.ctxt, size=4,
+                                              volume_type_id=dst_type.id)
+        new_volume.update(self.driver.create_volume(new_volume))
+        new_volume.save()
+
+        fake_manager = mock.Mock()
+        fake_manager.driver = self.driver
+        volume_manager.VolumeManager.update_migrated_volume(
+            fake_manager, self.ctxt, volume, new_volume, 'available')
+        volume.refresh()
+        new_volume.refresh()
+        updated_new = volume.finish_volume_migration(new_volume)
+
+        self.driver.delete_volume(updated_new)
+
+        self.assertEqual(0, len(self.db.get_project('goose')['volumes']),
+                         'the source volume was left behind in goose')
+        self.assertEqual(1, len(self.db.get_project('fox')['volumes']))
+
+        self.driver.delete_volume(volume)
+        db.volume_destroy(self.ctxt, volume.id)
+        db.volume_destroy(self.ctxt, updated_new.id)
 
     def test_get_volume_stats(self):
         """Test that lightos_client succeed."""
