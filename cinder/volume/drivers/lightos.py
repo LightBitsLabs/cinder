@@ -43,6 +43,8 @@ from cinder.volume import driver
 LOG = logging.getLogger(__name__)
 ENABLE_TRACE = True
 LIGHTOS_DEFAULT_PROJECT_NAME = "default"
+# Key holding the volume's project inside its provider_location.
+LIGHTOS_PROJECT_LOCATION_KEY = "project_name"
 
 urllib3.disable_warnings()
 
@@ -457,8 +459,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
         # Create a volume from the intermediate snapshot
         try:
-            self._create_volume(volume,
-                                src_snapshot_lightos_name=snapshot_name)
+            model_update = self._create_volume(
+                volume, src_snapshot_lightos_name=snapshot_name)
         except Exception as e:
             LOG.error("Failed to create volume %s from intermediate "
                       " snapshot %s. Trying to clean up.",
@@ -474,6 +476,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                             " volume %s. Trying to clean up.",
                             snapshot_name, src_volume_name)
                 raise e
+
+        return model_update
 
     def create_export(self, context, volume, vg=None):
         """Irrelevant for lightos volumes.
@@ -584,7 +588,27 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         lightos_volname = CONF.volume_name_template % volid
         return lightos_volname
 
-    def _get_lightos_project_name(self, volume):
+    @staticmethod
+    def _encode_provider_location(project_name):
+        """Encode the LightOS placement of a volume as a provider_location."""
+        return json.dumps({LIGHTOS_PROJECT_LOCATION_KEY: project_name})
+
+    @staticmethod
+    def _decode_provider_location(provider_location):
+        """Return the project recorded in provider_location, or None."""
+        if not provider_location:
+            return None
+        try:
+            return json.loads(provider_location).get(
+                LIGHTOS_PROJECT_LOCATION_KEY)
+        except (AttributeError, TypeError, ValueError):
+            LOG.warning(
+                "Ignoring malformed LightOS provider_location %s",
+                provider_location)
+            return None
+
+    def _get_volume_type_project_name(self, volume):
+        """Return the project requested by the volume type of this volume."""
         try:
             extra_specs = volume.volume_type.extra_specs
             project_name = extra_specs.get(
@@ -597,6 +621,20 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             project_name = LIGHTOS_DEFAULT_PROJECT_NAME
 
         return project_name
+
+    def _get_lightos_project_name(self, volume):
+        """Return the LightOS project this volume lives in.
+
+        Bound to the volume at creation time in provider_location. The
+        volume type is only a fallback for volumes created before that was
+        recorded - it is mutable and goes stale on retype.
+        """
+        project_name = self._decode_provider_location(
+            volume.get('provider_location'))
+        if project_name:
+            return project_name
+
+        return self._get_volume_type_project_name(volume)
 
     def _lightos_snapshotname(self, snapshot_id):
         return CONF.snapshot_name_template % snapshot_id
@@ -777,7 +815,9 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                     lightos_name,
                     lightos_uuid,
                     project_name)
-                return
+                # Bind the volume to the project it was created in.
+                return {'provider_location':
+                        self._encode_provider_location(project_name)}
 
             # if volume was created in failed state we should clean it up
             LOG.warning(
@@ -919,6 +959,35 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                    ' %(uuid)s project %(project_name)s' % (
                        dict(uuid=lightos_uuid, project_name=project_name)))
             raise exception.VolumeBackendAPIException(message=msg)
+
+    def update_migrated_volume(self, ctxt, volume, new_volume,
+                               original_volume_status):
+        """Hand the source project over to the record Cinder will delete.
+
+        Cinder deletes the source volume through new_volume's record, which
+        keeps the destination volume type. Returning provider_location makes
+        the manager move the source project onto that record.
+
+        :param ctxt: The context used to run the method
+        :param volume: The original volume that was migrated to this backend
+        :param new_volume: The migration volume object that was created on
+                           this backend as part of the migration process
+        :param original_volume_status: The status of the original volume
+        :returns: model_update to update DB with any needed changes
+        """
+        # Volumes with no recorded project have nothing to hand over, so
+        # backfill it here - the manager reads volume['provider_location']
+        # after this call.
+        if not self._decode_provider_location(
+                volume.get('provider_location')):
+            volume.provider_location = self._encode_provider_location(
+                self._get_volume_type_project_name(volume))
+            LOG.debug(
+                "LIGHTOS backfilled provider_location %s for migrated "
+                "volume %s", volume.provider_location, volume.id)
+
+        return {'_name_id': new_volume.name_id,
+                'provider_location': new_volume.provider_location}
 
     def get_vol_by_id(self, volume):
         LOG.warning('UNIMPLEMENTED: get vol by id')
