@@ -440,7 +440,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         and setup replication between the newly created volume
         and the secondary volume.
         """
-        project_name = self._get_lightos_project_name(volume)
+        project_name = self._get_volume_type_project_name(volume)
         # Create an intermediate snapshot
         snapshot_name = self._interm_snapshotname(volume)
         src_volume_name = self._lightos_volname(src_vref)
@@ -790,7 +790,11 @@ class LightOSVolumeDriver(driver.VolumeDriver):
 
     def _create_volume(self, volume, src_snapshot_lightos_name):
         lightos_name = self._lightos_volname(volume)
-        project_name = self._get_lightos_project_name(volume)
+        # The volume type says where to create the volume. Do not trust an
+        # inherited provider_id: Cinder copies it onto the temporary volume
+        # it creates for a migration, where it still names the source
+        # project.
+        project_name = self._get_volume_type_project_name(volume)
         lightos_uuid = '<UNKNOWN>'
         vol_state = 'UNKNOWN'
 

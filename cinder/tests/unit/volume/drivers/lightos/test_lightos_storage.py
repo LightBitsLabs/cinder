@@ -1104,6 +1104,31 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         db.volume_destroy(self.ctxt, legacy.id)
         db.volume_destroy(self.ctxt, gone.id)
 
+    def test_create_volume_ignores_an_inherited_provider_id(self):
+        """The volume type decides where a new volume is created.
+
+        Cinder copies provider_id onto the temporary volume it creates for a
+        migration, where it still names the source project.
+        """
+        self.driver.do_setup(None)
+        src_type, dst_type = self._project_types()
+
+        tmp_volume = test_utils.create_volume(
+            self.ctxt, size=4, volume_type_id=dst_type.id,
+            provider_id='goose 5eb8d450-98e5-4667-b148-6652ceddcdbf')
+
+        model_update = self.driver.create_volume(tmp_volume)
+
+        self.assertIsNone(self.db.get_project('goose'))
+        lightos_uuid = self.db.get_project('fox')['volumes'][0]['UUID']
+        self.assertEqual({'provider_id': 'fox %s' % lightos_uuid},
+                         model_update)
+
+        tmp_volume.update(model_update)
+        tmp_volume.save()
+        self.driver.delete_volume(tmp_volume)
+        db.volume_destroy(self.ctxt, tmp_volume.id)
+
     def _retype_across_projects(self, src_type, dst_type, stamp_source=True):
         """Run a cross-project retype the way the volume manager runs it."""
         volume = test_utils.create_volume(self.ctxt, size=4,
