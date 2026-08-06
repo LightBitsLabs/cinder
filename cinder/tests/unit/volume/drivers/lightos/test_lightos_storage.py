@@ -1073,36 +1073,68 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
             name='goose_type')
         volume = test_utils.create_volume(self.ctxt, size=4,
                                           volume_type_id=vol_type.id,
-                                          provider_id='garbage')
+                                          provider_id='one two three')
 
         self.assertEqual('goose',
                          self.driver._get_lightos_project_name(volume))
 
         db.volume_destroy(self.ctxt, volume.id)
 
-    def test_update_provider_info_stamps_volumes_missing_it(self):
-        """Volumes created before we recorded provider_id get stamped."""
+    def test_project_only_provider_id_resolves_the_uuid_by_name(self):
+        """A provider_id carrying only a project still addresses a volume."""
         self.driver.do_setup(None)
 
         src_type, _ = self._project_types()
-        legacy = test_utils.create_volume(self.ctxt, size=4,
+        volume = test_utils.create_volume(self.ctxt, size=4,
                                           volume_type_id=src_type.id)
-        self.driver.create_volume(legacy)
-        gone = test_utils.create_volume(self.ctxt, size=4,
-                                        volume_type_id=src_type.id)
-
-        updates, snap_updates = self.driver.update_provider_info(
-            [legacy, gone], [])
+        self.driver.create_volume(volume)
+        volume.update({'provider_id': 'goose'})
+        volume.save()
 
         lightos_uuid = self.db.get_project('goose')['volumes'][0]['UUID']
-        self.assertEqual([{'id': legacy.id,
-                           'provider_id': 'goose %s' % lightos_uuid}],
-                         updates)
+        self.assertEqual('goose',
+                         self.driver._get_lightos_project_name(volume))
+        self.assertEqual(lightos_uuid,
+                         self.driver._get_lightos_uuid('goose', volume))
+
+        self.driver.delete_volume(volume)
+        self.assertEqual(0, len(self.db.get_project('goose')['volumes']))
+        db.volume_destroy(self.ctxt, volume.id)
+
+    def test_update_provider_info_stamps_without_touching_the_cluster(self):
+        """The backfill must not do IO: it runs before the service is up.
+
+        A deployment can hold tens of thousands of volumes, and this runs
+        before cinder-volume accepts requests.
+        """
+        self.driver.do_setup(None)
+
+        src_type, _ = self._project_types()
+        unstamped = test_utils.create_volume(self.ctxt, size=4,
+                                             volume_type_id=src_type.id)
+        stamped = test_utils.create_volume(
+            self.ctxt, size=4, volume_type_id=src_type.id,
+            provider_id='fox 5eb8d450-98e5-4667-b148-6652ceddcdbf')
+        untyped = test_utils.create_volume(self.ctxt, size=4)
+
+        def fail_on_any_cluster_call(cmd, **kwargs):
+            self.fail('update_provider_info issued %s' % cmd)
+
+        self.driver.cluster.send_cmd = fail_on_any_cluster_call
+        updates, snap_updates = self.driver.update_provider_info(
+            [unstamped, stamped, untyped], [])
+
+        # Already-stamped volumes are left alone, so a restart of a stamped
+        # deployment produces no updates at all.
+        self.assertEqual(
+            [{'id': unstamped.id, 'provider_id': 'goose'},
+             {'id': untyped.id,
+              'provider_id': lightos.LIGHTOS_DEFAULT_PROJECT_NAME}],
+            updates)
         self.assertIsNone(snap_updates)
 
-        self.driver.delete_volume(legacy)
-        db.volume_destroy(self.ctxt, legacy.id)
-        db.volume_destroy(self.ctxt, gone.id)
+        for vol in (unstamped, stamped, untyped):
+            db.volume_destroy(self.ctxt, vol.id)
 
     def test_create_volume_ignores_an_inherited_provider_id(self):
         """The volume type decides where a new volume is created.

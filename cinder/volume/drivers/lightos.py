@@ -587,8 +587,15 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         return lightos_volname
 
     @staticmethod
-    def _create_provider_id_string(project_name, lightos_uuid):
-        """Build the provider_id addressing a volume on the cluster."""
+    def _create_provider_id_string(project_name, lightos_uuid=None):
+        """Build the provider_id addressing a volume on the cluster.
+
+        The UUID is optional. A provider_id carrying only a project still
+        addresses the volume, the UUID is then resolved by name.
+        """
+        if not lightos_uuid:
+            return project_name
+
         return "%s %s" % (project_name, lightos_uuid)
 
     @staticmethod
@@ -596,14 +603,16 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         """Return the (project, LightOS UUID) recorded in provider_id."""
         if not provider_id:
             return None, None
-        try:
-            project_name, lightos_uuid = provider_id.split(' ')
-        except (AttributeError, ValueError):
-            LOG.warning("Ignoring malformed LightOS provider_id %s",
-                        provider_id)
-            return None, None
 
-        return project_name, lightos_uuid
+        fields = provider_id.split(' ')
+        if len(fields) == 1:
+            return fields[0], None
+        elif len(fields) == 2:
+            return fields[0], fields[1]
+
+        LOG.warning("Ignoring malformed LightOS provider_id %s", provider_id)
+
+        return None, None
 
     def _get_volume_type_project_name(self, volume):
         """Return the project requested by the volume type of this volume."""
@@ -981,9 +990,10 @@ class LightOSVolumeDriver(driver.VolumeDriver):
     def update_provider_info(self, volumes, snapshots):
         """Stamp provider_id on volumes created before we recorded it.
 
-        Called on service start. Volumes keep working without it through the
-        volume-type fallback, but a retype across projects needs the project
-        recorded to avoid deleting the wrong volume.
+        Runs before the volume service accepts requests, and a deployment can
+        hold tens of thousands of volumes, so this does not talk to the
+        cluster: the project is taken from the volume type. The UUID is left
+        out and resolved by name when something needs it.
 
         :param volumes: List of Cinder volumes to check for updates
         :param snapshots: List of Cinder snapshots to check for updates
@@ -991,22 +1001,20 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         """
         volume_updates = []
         for volume in volumes:
-            if self._parse_provider_id(volume.get('provider_id'))[1]:
+            if self._parse_provider_id(volume.get('provider_id'))[0]:
                 continue
 
-            project_name = self._get_volume_type_project_name(volume)
             try:
-                lightos_uuid = self._lookup_lightos_uuid(project_name, volume)
-            except exception.VolumeNotFound:
-                LOG.warning(
-                    "Not stamping provider_id on volume %s: no LightOS "
-                    "volume found in project %s", volume['id'], project_name)
+                project_name = self._get_volume_type_project_name(volume)
+            except Exception:
+                # Leave the volume unstamped rather than fail to start.
+                LOG.exception("Could not stamp provider_id on volume %s",
+                              volume['id'])
                 continue
 
             volume_updates.append(
                 {'id': volume['id'],
-                 'provider_id': self._create_provider_id_string(
-                     project_name, lightos_uuid)})
+                 'provider_id': self._create_provider_id_string(project_name)})
 
         return volume_updates, None
 
