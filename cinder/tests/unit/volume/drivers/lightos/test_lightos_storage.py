@@ -1044,6 +1044,29 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         self.driver.delete_volume(volume)
         db.volume_destroy(self.ctxt, volume.id)
 
+    def test_retype_preserves_a_live_acl(self):
+        """The QoS update must not disturb the ACL of an attached volume.
+
+        This is why set_volume_qos_policy is its own command instead of an
+        extension of update_volume, which also carries the ACL.
+        """
+        volume, new_type, diff = self._qos_retype_setup(
+            {'lightos:qos_policy': self.SILVER_QOS})
+        before = self._lightos_volume()
+        before['acl'] = {'values': [FAKE_CLIENT_HOSTNQN]}
+        before['IPAcl'] = {'values': FAKE_HOST_IPS}
+
+        self.assertIs(
+            True, self.driver.retype(self.ctxt, volume, new_type, diff, None))
+
+        after = self._lightos_volume()
+        self.assertEqual(self.SILVER_QOS, after['qosPolicyUUID'])
+        self.assertEqual({'values': [FAKE_CLIENT_HOSTNQN]}, after['acl'])
+        self.assertEqual({'values': FAKE_HOST_IPS}, after['IPAcl'])
+
+        self.driver.delete_volume(volume)
+        db.volume_destroy(self.ctxt, volume.id)
+
     def test_retype_between_identical_types_is_a_noop(self):
         """Nothing to change, and nothing sent to the cluster."""
         volume, new_type, diff = self._qos_retype_setup(

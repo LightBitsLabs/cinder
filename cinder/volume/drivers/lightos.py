@@ -985,9 +985,14 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         if not changed:
             return True
 
+        # Specs are compared textually: one that is semantically unchanged
+        # but spelled differently (an explicit default project vs none)
+        # falls back to migration. Safe, at worst slower.
         placement_specs = sorted(set(changed) - {LIGHTOS_QOS_POLICY_SPEC})
         if placement_specs:
-            LOG.debug("LIGHTOS cannot retype volume %s in place, %s changed",
+            LOG.debug("LIGHTOS falling back to standard retype of volume"
+                      " %s: an in-place retype is available only when the"
+                      " change is limited to the QoS policy, but %s changed",
                       volume.id, placement_specs)
             return False
 
