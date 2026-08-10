@@ -1,8 +1,7 @@
 ---
 fixes:
   - |
-    LightOS driver `bug #44442
-    <https://lightbitslabs.atlassian.net/browse/LBM1-44442>`_: retyping a
+    LightOS driver: retyping a
     volume between two volume types that name different LightOS projects
     left the source volume behind on the backend. The driver resolved a
     volume's project from the ``lightos:project_name`` extra spec of its

@@ -615,19 +615,17 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         return None, None
 
     def _get_volume_type_project_name(self, volume):
-        """Return the project requested by the volume type of this volume."""
-        try:
-            extra_specs = volume.volume_type.extra_specs
-            project_name = extra_specs.get(
-                'lightos:project_name',
-                LIGHTOS_DEFAULT_PROJECT_NAME)
-        except Exception:
-            LOG.debug(
-                "LIGHTOS volume %s has no lightos:project_name",
-                volume)
-            project_name = LIGHTOS_DEFAULT_PROJECT_NAME
+        """Return the project requested by the volume type of this volume.
 
-        return project_name
+        An untyped volume resolves to the default project. A volume whose
+        type cannot be read raises: the caller decides whether a guess is
+        acceptable.
+        """
+        if not volume.get('volume_type_id'):
+            return LIGHTOS_DEFAULT_PROJECT_NAME
+
+        return volume.volume_type.extra_specs.get(
+            'lightos:project_name', LIGHTOS_DEFAULT_PROJECT_NAME)
 
     def _get_lightos_project_name(self, volume):
         """Return the LightOS project this volume lives in.
@@ -640,7 +638,14 @@ class LightOSVolumeDriver(driver.VolumeDriver):
         if project_name:
             return project_name
 
-        project_name = self._get_volume_type_project_name(volume)
+        try:
+            project_name = self._get_volume_type_project_name(volume)
+        except Exception:
+            LOG.warning("Could not read the volume type of LIGHTOS volume"
+                        " %s, assuming project %s",
+                        volume['id'], LIGHTOS_DEFAULT_PROJECT_NAME)
+            return LIGHTOS_DEFAULT_PROJECT_NAME
+
         LOG.debug("LIGHTOS volume %s has no project recorded in its"
                   " provider_id, falling back to %s from its volume type",
                   volume['id'], project_name)
@@ -948,8 +953,15 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                     timeout=self. logical_op_timeout,
                     volume_uuid=lightos_uuid))
             # We address the volume by its recorded project and UUID, so a
-            # NOT_FOUND means it is already gone.
-            if status_code in (httpstatus.OK, httpstatus.NOT_FOUND):
+            # NOT_FOUND means it is already gone. Log it: if the address
+            # was wrong, this is the only trace of a volume left behind.
+            if status_code == httpstatus.NOT_FOUND:
+                LOG.warning(
+                    "delete_volume: no LightOS volume with UUID %s in"
+                    " project %s, treating it as already deleted",
+                    lightos_uuid, project_name)
+                break
+            if status_code == httpstatus.OK:
                 break
 
             LOG.warning(

@@ -984,7 +984,16 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
                                          volume_type_id=vol_type.id)
 
         self.driver.create_volume(volume)
-        self.driver.create_cloned_volume(clone, volume)
+        model_update = self.driver.create_cloned_volume(clone, volume)
+
+        # A clone is a creation path: it must record where the clone
+        # lives, like create_volume does.
+        _, lightos_clone = self.db.get_volume_by_name(
+            lightos.LIGHTOS_DEFAULT_PROJECT_NAME, 'volume-%s' % clone.name_id)
+        clone_uuid = lightos_clone['UUID']
+        self.assertEqual({'provider_id': '%s %s' % (
+            lightos.LIGHTOS_DEFAULT_PROJECT_NAME, clone_uuid)}, model_update)
+
         self.driver.delete_volume(volume)
         self.driver.delete_volume(clone)
 
@@ -1115,7 +1124,8 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         stamped = test_utils.create_volume(
             self.ctxt, size=4, volume_type_id=src_type.id,
             provider_id='fox 5eb8d450-98e5-4667-b148-6652ceddcdbf')
-        untyped = test_utils.create_volume(self.ctxt, size=4)
+        untyped = test_utils.create_volume(self.ctxt, size=4,
+                                           volume_type_id=None)
 
         def fail_on_any_cluster_call(cmd, **kwargs):
             self.fail('update_provider_info issued %s' % cmd)
@@ -1135,6 +1145,24 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
 
         for vol in (unstamped, stamped, untyped):
             db.volume_destroy(self.ctxt, vol.id)
+
+    def test_update_provider_info_leaves_unreadable_types_unstamped(self):
+        """A volume whose type cannot be read must not be stamped by a guess.
+
+        provider_id outranks the volume type, so stamping the default
+        project here would stick even once the type is readable again.
+        """
+        self.driver.do_setup(None)
+
+        # test_utils assigns a volume type that does not exist in the DB,
+        # so reading the type raises.
+        volume = test_utils.create_volume(self.ctxt, size=4)
+
+        updates, _ = self.driver.update_provider_info([volume], [])
+
+        self.assertEqual([], updates)
+
+        db.volume_destroy(self.ctxt, volume.id)
 
     def test_create_volume_ignores_an_inherited_provider_id(self):
         """The volume type decides where a new volume is created.
@@ -1161,17 +1189,14 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         self.driver.delete_volume(tmp_volume)
         db.volume_destroy(self.ctxt, tmp_volume.id)
 
-    def _retype_across_projects(self, src_type, dst_type, stamp_source=True):
-        """Run a cross-project retype the way the volume manager runs it."""
-        volume = test_utils.create_volume(self.ctxt, size=4,
-                                          volume_type_id=src_type.id)
-        model_update = self.driver.create_volume(volume)
-        if stamp_source:
-            volume.update(model_update)
-            volume.save()
+    def _migrate_across_projects(self, volume, dst_type):
+        """Run the migration hand-over the way the volume manager runs it.
 
-        # Cinder copies the data into a new volume in the destination
-        # project, then hands both records to the driver.
+        Cinder copies the data into a new volume in the destination
+        project, then hands both records to the driver. Returns the
+        throwaway record pointing at the source volume, which Cinder
+        deletes next.
+        """
         new_volume = test_utils.create_volume(self.ctxt, size=4,
                                               volume_type_id=dst_type.id)
         new_volume.update(self.driver.create_volume(new_volume))
@@ -1184,17 +1209,20 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         volume.refresh()
         new_volume.refresh()
 
-        # Swap the DB records. updated_new is the throwaway record pointing
-        # at the source volume, which Cinder deletes next.
-        updated_new = volume.finish_volume_migration(new_volume)
-        return volume, updated_new
+        # Swap the DB records.
+        return volume.finish_volume_migration(new_volume)
 
     def test_retype_across_projects_deletes_the_source_volume(self):
         """Retyping across projects must not leak the source volume."""
         self.driver.do_setup(None)
         src_type, dst_type = self._project_types()
 
-        volume, updated_new = self._retype_across_projects(src_type, dst_type)
+        volume = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=src_type.id)
+        volume.update(self.driver.create_volume(volume))
+        volume.save()
+
+        updated_new = self._migrate_across_projects(volume, dst_type)
 
         self.assertEqual(1, len(self.db.get_project('goose')['volumes']))
         self.assertEqual(1, len(self.db.get_project('fox')['volumes']))
@@ -1233,18 +1261,7 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         volume.update({'provider_id': updates[0]['provider_id']})
         volume.save()
 
-        new_volume = test_utils.create_volume(self.ctxt, size=4,
-                                              volume_type_id=dst_type.id)
-        new_volume.update(self.driver.create_volume(new_volume))
-        new_volume.save()
-
-        fake_manager = mock.Mock()
-        fake_manager.driver = self.driver
-        volume_manager.VolumeManager.update_migrated_volume(
-            fake_manager, self.ctxt, volume, new_volume, 'available')
-        volume.refresh()
-        new_volume.refresh()
-        updated_new = volume.finish_volume_migration(new_volume)
+        updated_new = self._migrate_across_projects(volume, dst_type)
 
         self.driver.delete_volume(updated_new)
 
