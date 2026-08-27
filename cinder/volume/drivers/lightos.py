@@ -1625,9 +1625,17 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             raise exception.VolumeBackendAPIException(message=_(msg))
 
         if not host_ips:
-            msg = 'Connector (%s) did not find host IPs, aborting' % (
-                connector)
-            raise exception.VolumeBackendAPIException(message=_(msg))
+            if self.use_ip_acl():
+                msg = ('Connector (%s) did not find host IPs. Setting the '
+                       'volume IP-ACL requires an os-brick version that '
+                       'reports host_ips in the connector properties. '
+                       'Update os-brick or set lightos_use_ipacl=False, '
+                       'aborting' % connector)
+                raise exception.VolumeBackendAPIException(message=_(msg))
+            LOG.warning(
+                'Connector (%s) did not find host IPs. IP-ACL is disabled '
+                'so proceeding with hostnqn-based ACL only. The volume '
+                'IP-ACL will allow any IP address.', connector)
 
         lightos_volname = self._lightos_volname(volume)
         project_name = self._get_lightos_project_name(volume)

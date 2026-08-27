@@ -1,0 +1,12 @@
+---
+fixes:
+  - |
+    Lightbits driver `bug #2026001
+    <https://bugs.launchpad.net/cinder/+bug/2026001>`_: Fixed volume
+    attachment failing with "did not find host IPs, aborting" when the
+    connector properties do not include ``host_ips`` (os-brick versions
+    prior to the IP-ACL support) even though ``lightos_use_ipacl`` is set
+    to ``False``. The driver now requires ``host_ips`` only when IP-ACL
+    is in use, and otherwise logs a warning and proceeds with a
+    hostnqn-based ACL, restoring compatibility with older os-brick
+    versions.
