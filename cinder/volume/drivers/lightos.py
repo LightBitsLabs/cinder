@@ -407,6 +407,8 @@ class LightOSVolumeDriver(driver.VolumeDriver):
     def __init__(self, *args, **kwargs):
         super(LightOSVolumeDriver, self).__init__(*args, **kwargs)
         self.configuration.append_config_values(lightos_opts)
+        # one-time warning for connectors that do not report host_ips
+        self._warned_no_host_ips = False
         # connector implements NVMe/TCP initiator functionality.
         if not self.configuration.__dict__.get("initiator_connector", None):
             self.configuration.initiator_connector = (
@@ -1824,9 +1826,22 @@ class LightOSVolumeDriver(driver.VolumeDriver):
             raise exception.VolumeBackendAPIException(message=_(msg))
 
         if not host_ips:
-            msg = 'Connector (%s) did not find host IPs, aborting' % (
-                connector)
-            raise exception.VolumeBackendAPIException(message=_(msg))
+            if self.use_ip_acl():
+                msg = ('Connector (%s) did not find host IPs. Setting the '
+                       'volume IP-ACL requires an os-brick version that '
+                       'reports host_ips in the connector properties. '
+                       'Update os-brick or set lightos_use_ipacl=False, '
+                       'aborting' % connector)
+                raise exception.VolumeBackendAPIException(message=_(msg))
+            if not self._warned_no_host_ips:
+                self._warned_no_host_ips = True
+                LOG.warning(
+                    'Connector does not report host_ips (os-brick '
+                    'predates IP-ACL support). IP-ACL is disabled so '
+                    'volumes are protected by hostnqn-based ACL only; '
+                    'enabling lightos_use_ipacl requires an os-brick '
+                    'version that reports host_ips. This warning is '
+                    'logged once.')
 
         lightos_volname = self._lightos_volname(volume)
         project_name = self._get_lightos_project_name(volume)
