@@ -1823,7 +1823,7 @@ class LightOSVolumeDriver(driver.VolumeDriver):
                    'client, aborting' % (connector))
             raise exception.VolumeBackendAPIException(message=_(msg))
 
-        if not host_ips:
+        if self.use_ip_acl() and not host_ips:
             msg = 'Connector (%s) did not find host IPs, aborting' % (
                 connector)
             raise exception.VolumeBackendAPIException(message=_(msg))

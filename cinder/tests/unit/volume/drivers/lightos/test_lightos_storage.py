@@ -862,6 +862,48 @@ class LightOSStorageVolumeDriverTest(test.TestCase):
         self.driver.delete_volume(volume)
         db.volume_destroy(self.ctxt, volume.id)
 
+    def test_initialize_connection_no_host_ips_should_fail(self):
+        InitialConnectorMock.nqn = "hostnqn1"
+        InitialConnectorMock.found_discovery_client = True
+        InitialConnectorMock.host_ips = []
+        self.addCleanup(setattr, InitialConnectorMock, 'host_ips',
+                        FAKE_HOST_IPS)
+        self.driver.do_setup(None)
+        vol_type = test_utils.create_volume_type(self.ctxt, self,
+                                                 name='my_vol_type')
+        volume = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=vol_type.id)
+        self.driver.create_volume(volume)
+        self.assertRaises(exception.VolumeBackendAPIException,
+                          self.driver.initialize_connection, volume,
+                          get_connector_properties())
+        self.driver.delete_volume(volume)
+        db.volume_destroy(self.ctxt, volume.id)
+
+    def test_initialize_connection_no_host_ips_ipacl_disabled(self):
+        self.driver.configuration.lightos_use_ipacl = False
+        InitialConnectorMock.nqn = "hostnqn1"
+        InitialConnectorMock.found_discovery_client = True
+        InitialConnectorMock.host_ips = []
+        self.addCleanup(setattr, InitialConnectorMock, 'host_ips',
+                        FAKE_HOST_IPS)
+        self.driver.do_setup(None)
+        vol_type = test_utils.create_volume_type(self.ctxt, self,
+                                                 name='my_vol_type')
+        volume = test_utils.create_volume(self.ctxt, size=4,
+                                          volume_type_id=vol_type.id)
+        self.driver.create_volume(volume)
+        connection_props = \
+            self.driver.initialize_connection(volume,
+                                              get_connector_properties())
+        self.assertEqual('lightos', connection_props['driver_volume_type'])
+        self.assertEqual(
+            self.db.data['projects']['default']['volumes'][0]['IPAcl'],
+            {'values': ['ALLOW_ANY']})
+        self.driver.terminate_connection(volume, get_connector_properties())
+        self.driver.delete_volume(volume)
+        db.volume_destroy(self.ctxt, volume.id)
+
     def test_initialize_connection_no_dsc_should_fail(self):
         InitialConnectorMock.nqn = "hostnqn1"
         InitialConnectorMock.found_discovery_client = False

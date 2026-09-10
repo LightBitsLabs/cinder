@@ -1,0 +1,11 @@
+---
+fixes:
+  - |
+    Lightbits driver: ``initialize_connection`` no longer fails when the
+    connector reports no ``host_ips`` and ``lightos_use_ipacl`` is ``False``.
+    The host IPs are only consumed by the volume IP-ACL, so they are not
+    required when the IP-ACL is disabled. This lets the driver work with
+    os-brick versions that predate the ``host_ips`` connector property, and
+    with connectors running in a network namespace whose addresses are not
+    the host's, as long as the IP-ACL is disabled. With
+    ``lightos_use_ipacl = True`` (the default) the behaviour is unchanged.
